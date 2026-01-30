@@ -1,0 +1,35 @@
+services:
+  discovery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DISCOVERY_PORT=8080
+      - LOG_LEVEL=debug
+      - CACHE_URL=redis://dragonfly:6379
+      - SEED_RELAYS=wss://relay.damus.io,wss://nos.lol,wss://relay.nostr.band,wss://relay.cloistr.xyz
+      - RELAY_CHECK_INTERVAL=60
+      - NIP11_TIMEOUT=10
+      - INVENTORY_TTL=12
+      - ACTIVITY_TTL=15
+      - PUBLISH_RELAY=wss://relay.cloistr.xyz
+    depends_on:
+      - dragonfly
+    restart: unless-stopped
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - dragonfly_data:/data
+    command:
+      - --requirepass=
+      - --maxmemory=256mb
+      - --snapshot_cron=*/30 * * * *
+    restart: unless-stopped
+
+volumes:
+  dragonfly_data:
