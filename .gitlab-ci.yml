@@ -1,0 +1,98 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_IMAGE: registry.coldforge.xyz/coldforge/coldforge-discovery
+  GO_VERSION: "1.24"
+
+# Cache Go modules between jobs
+.go-cache: &go-cache
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-go
+    paths:
+      - .go/pkg/mod/
+
+# Test stage
+test:
+  stage: test
+  image: golang:${GO_VERSION}-alpine
+  <<: *go-cache
+  variables:
+    GOPATH: ${CI_PROJECT_DIR}/.go
+  before_script:
+    - apk add --no-cache git
+  script:
+    - go mod download
+    - go test -v -race -coverprofile=coverage.out ./...
+    - go tool cover -func=coverage.out
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.out
+
+lint:
+  stage: test
+  image: golangci/golangci-lint:latest
+  <<: *go-cache
+  variables:
+    GOPATH: ${CI_PROJECT_DIR}/.go
+  script:
+    - golangci-lint run --timeout 5m
+  allow_failure: true
+
+# Build stage
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+  script:
+    - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_SHA} .
+    - docker tag ${DOCKER_IMAGE}:${CI_COMMIT_SHA} ${DOCKER_IMAGE}:latest
+    - docker push ${DOCKER_IMAGE}:${CI_COMMIT_SHA}
+    - docker push ${DOCKER_IMAGE}:latest
+  only:
+    - main
+    - tags
+
+build-branch:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+  script:
+    - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG} .
+    - docker push ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG}
+  except:
+    - main
+    - tags
+
+# Deploy stage - triggers Kubernetes deployment
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  variables:
+    KUBECONFIG: /tmp/kubeconfig
+  before_script:
+    - echo "${KUBE_CONFIG}" | base64 -d > ${KUBECONFIG}
+  script:
+    - kubectl set image deployment/coldforge-discovery discovery=${DOCKER_IMAGE}:${CI_COMMIT_SHA} -n coldforge
+    - kubectl rollout status deployment/coldforge-discovery -n coldforge --timeout=300s
+  only:
+    - main
+  when: manual
+  environment:
+    name: production
+    url: https://discovery.coldforge.xyz

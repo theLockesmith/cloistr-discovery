@@ -2,7 +2,7 @@
 
 **Nostr Discovery Protocol (NDP) implementation - relay discovery, content routing, and activity tracking**
 
-**Status:** Scaffolded - Core structure in place, needs integration and testing
+**Status:** Functional - Core services wired up, tested locally with Docker Compose
 
 ## Documentation
 
@@ -119,15 +119,23 @@ Environment variables:
 | 30068 | Discovery Query | Request discovery info |
 | 30069 | Relay Directory Entry | Verified relay info + health |
 
+## Completed
+
+- [x] Wire up relay/inventory/activity goroutines to main.go
+- [x] Add go.sum via `go mod tidy`
+- [x] Write unit tests for cache layer (12 tests)
+- [x] Write unit tests for API handlers (11 tests)
+- [x] Test locally with Docker Compose
+- [x] Fix critical issues from code review (event loop breaks, context management)
+
 ## Next Steps
 
-1. Wire up relay/inventory/activity to main.go
-2. Add go.sum via `go mod tidy`
-3. Write unit tests for cache and API
-4. Test locally with Docker Compose
-5. Deploy Dragonfly to Atlantis
-6. Create Atlas role for Kubernetes deployment
-7. Integration test with live relays
+1. Deploy Dragonfly to Atlantis
+2. Create Atlas role for Kubernetes deployment
+3. Integration test with live relays
+4. Add health check verification for background services
+5. Implement exponential backoff for relay reconnections
+6. Add TTL expiration tests
 
 ## See Also
 

@@ -15,9 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	"gitlab.com/coldforge/coldforge-discovery/internal/activity"
 	"gitlab.com/coldforge/coldforge-discovery/internal/api"
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/inventory"
+	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
 
 func main() {
@@ -57,12 +60,12 @@ func main() {
 	defer cacheClient.Close()
 
 	// Verify cache connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := cacheClient.Ping(ctx); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := cacheClient.Ping(pingCtx); err != nil {
 		slog.Error("cache ping failed", "error", err)
 		os.Exit(1)
 	}
-	cancel()
 	slog.Info("connected to cache", "url", cfg.CacheURL)
 
 	// Initialize API server
@@ -96,9 +99,41 @@ func main() {
 		}
 	}()
 
-	// TODO: Start relay monitoring goroutine
-	// TODO: Start inventory indexing goroutine
-	// TODO: Start activity tracking goroutine
+	// Create context for background services
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+
+	// Start relay monitoring goroutine
+	relayMonitor := relay.NewMonitor(cfg, cacheClient)
+	go func() {
+		slog.Info("starting relay monitor")
+		relayMonitor.Start(bgCtx)
+	}()
+
+	// Start inventory indexing goroutine
+	inventoryIndexer := inventory.NewIndexer(cfg, cacheClient)
+	go func() {
+		slog.Info("starting inventory indexer")
+		// Subscribe to seed relays for inventory events
+		for _, relayURL := range cfg.SeedRelays {
+			if err := inventoryIndexer.SubscribeToRelay(bgCtx, relayURL); err != nil {
+				slog.Error("failed to subscribe to relay for inventory", "url", relayURL, "error", err)
+			}
+		}
+		inventoryIndexer.Start(bgCtx)
+	}()
+
+	// Start activity tracking goroutine
+	activityTracker := activity.NewTracker(cfg, cacheClient)
+	go func() {
+		slog.Info("starting activity tracker")
+		// Subscribe to seed relays for activity events
+		for _, relayURL := range cfg.SeedRelays {
+			if err := activityTracker.SubscribeToRelay(bgCtx, relayURL); err != nil {
+				slog.Error("failed to subscribe to relay for activity", "url", relayURL, "error", err)
+			}
+		}
+		activityTracker.Start(bgCtx)
+	}()
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -106,9 +141,16 @@ func main() {
 	<-sigCh
 
 	slog.Info("shutting down...")
-	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
+
+	// Cancel background services first
+	bgCancel()
+
+	// Give background services time to clean up
+	time.Sleep(500 * time.Millisecond)
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown error", "error", err)
 	}
 	slog.Info("shutdown complete")

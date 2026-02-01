@@ -3,6 +3,7 @@ module gitlab.com/coldforge/coldforge-discovery
 go 1.24.1
 
 require (
+	github.com/alicebob/miniredis/v2 v2.33.0
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.7.0
@@ -10,6 +11,7 @@ require (
 
 require (
 	github.com/ImVexed/fasturl v0.0.0-20230304231329-4e41488060f3 // indirect
+	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
@@ -37,6 +39,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect

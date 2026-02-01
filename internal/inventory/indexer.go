@@ -132,6 +132,7 @@ func (i *Indexer) subscribeLoop(ctx context.Context, relayURL string) {
 			continue
 		}
 
+	eventLoop:
 		for {
 			select {
 			case <-ctx.Done():
@@ -140,7 +141,7 @@ func (i *Indexer) subscribeLoop(ctx context.Context, relayURL string) {
 				return
 			case event, ok := <-sub.Events:
 				if !ok {
-					break
+					break eventLoop
 				}
 				if err := i.ProcessInventory(ctx, event); err != nil {
 					slog.Error("failed to process inventory", "error", err)

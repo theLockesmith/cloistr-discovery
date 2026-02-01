@@ -173,6 +173,7 @@ func (t *Tracker) subscribeLoop(ctx context.Context, relayURL string) {
 			continue
 		}
 
+	eventLoop:
 		for {
 			select {
 			case <-ctx.Done():
@@ -181,7 +182,7 @@ func (t *Tracker) subscribeLoop(ctx context.Context, relayURL string) {
 				return
 			case event, ok := <-sub.Events:
 				if !ok {
-					break
+					break eventLoop
 				}
 				// Empty content means activity ended
 				if event.Content == "" || event.Content == "offline" {
