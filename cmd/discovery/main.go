@@ -23,6 +23,7 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/discovery"
 	"gitlab.com/coldforge/coldforge-discovery/internal/inventory"
 	"gitlab.com/coldforge/coldforge-discovery/internal/publisher"
+	"gitlab.com/coldforge/coldforge-discovery/internal/query"
 	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
 
@@ -160,11 +161,29 @@ func main() {
 		}
 	}
 
+	// Start query handler goroutine (requires private key)
+	var queryHandler *query.Handler
+	if cfg.PrivateKey != "" {
+		var err error
+		queryHandler, err = query.New(cfg, cacheClient)
+		if err != nil {
+			slog.Error("failed to initialize query handler", "error", err)
+		} else {
+			go func() {
+				slog.Info("starting query handler")
+				queryHandler.Start(bgCtx)
+			}()
+		}
+	}
+
 	// Initialize admin interface (if enabled)
 	if cfg.AdminEnabled {
 		adminServer := admin.NewServer(cfg, cacheClient, relayMonitor, discoveryCoordinator)
 		if eventPublisher != nil {
 			adminServer.SetPublisher(eventPublisher)
+		}
+		if queryHandler != nil {
+			adminServer.SetQueryHandler(queryHandler)
 		}
 		mux.HandleFunc("/admin/", adminServer.AuthMiddleware(adminServer.Handler))
 		slog.Info("admin interface enabled", "path", "/admin/")

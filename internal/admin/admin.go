@@ -30,13 +30,28 @@ type PublisherInfo struct {
 	PublicKey       string    `json:"public_key"`
 }
 
+// QueryHandlerInterface is an interface for getting query handler statistics.
+type QueryHandlerInterface interface {
+	GetPublicKey() string
+	GetLastQuery() time.Time
+	GetQueriesHandled() int64
+}
+
+// QueryHandlerInfo contains query handler statistics for the dashboard.
+type QueryHandlerInfo struct {
+	LastQuery      time.Time `json:"last_query"`
+	QueriesHandled int64     `json:"queries_handled"`
+	PublicKey      string    `json:"public_key"`
+}
+
 // Server handles admin API requests.
 type Server struct {
-	cfg         *config.Config
-	cache       *cache.Client
-	monitor     *relay.Monitor
-	coordinator *discovery.Coordinator
-	publisher   PublisherInterface
+	cfg          *config.Config
+	cache        *cache.Client
+	monitor      *relay.Monitor
+	coordinator  *discovery.Coordinator
+	publisher    PublisherInterface
+	queryHandler QueryHandlerInterface
 }
 
 // NewServer creates a new admin server.
@@ -52,6 +67,11 @@ func NewServer(cfg *config.Config, cache *cache.Client, monitor *relay.Monitor, 
 // SetPublisher sets the publisher for stats reporting.
 func (s *Server) SetPublisher(p PublisherInterface) {
 	s.publisher = p
+}
+
+// SetQueryHandler sets the query handler for stats reporting.
+func (s *Server) SetQueryHandler(q QueryHandlerInterface) {
+	s.queryHandler = q
 }
 
 // AuthMiddleware validates API key or basic auth credentials.
@@ -112,11 +132,12 @@ func (s *Server) Handler(w http.ResponseWriter, r *http.Request) {
 
 // DashboardResponse contains dashboard statistics.
 type DashboardResponse struct {
-	Relays    RelayStats     `json:"relays"`
-	Discovery DiscoveryInfo  `json:"discovery"`
-	Lists     ListCounts     `json:"lists"`
-	Activity  ActivityStats  `json:"activity"`
-	Publisher *PublisherInfo `json:"publisher,omitempty"`
+	Relays       RelayStats        `json:"relays"`
+	Discovery    DiscoveryInfo     `json:"discovery"`
+	Lists        ListCounts        `json:"lists"`
+	Activity     ActivityStats     `json:"activity"`
+	Publisher    *PublisherInfo    `json:"publisher,omitempty"`
+	QueryHandler *QueryHandlerInfo `json:"query_handler,omitempty"`
 }
 
 // RelayStats contains relay health statistics.
@@ -215,6 +236,15 @@ func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 			PublishCount:    s.publisher.GetPublishCount(),
 			RelaysPublished: s.publisher.GetRelaysPublished(),
 			PublicKey:       s.publisher.GetPublicKey(),
+		}
+	}
+
+	// Add query handler stats if available
+	if s.queryHandler != nil {
+		resp.QueryHandler = &QueryHandlerInfo{
+			LastQuery:      s.queryHandler.GetLastQuery(),
+			QueriesHandled: s.queryHandler.GetQueriesHandled(),
+			PublicKey:      s.queryHandler.GetPublicKey(),
 		}
 	}
 
