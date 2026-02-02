@@ -1,0 +1,289 @@
+// Package publisher handles publishing kind 30069 relay directory events to Nostr relays.
+// This enables passive federation with other discovery services.
+package publisher
+
+import (
+	"context"
+	"encoding/hex"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
+
+	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
+	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+)
+
+// Publisher publishes kind 30069 relay directory events.
+type Publisher struct {
+	cfg    *config.Config
+	cache  *cache.Client
+	sk     string // hex private key
+	pk     string // hex public key
+
+	mu            sync.RWMutex
+	lastPublish   time.Time
+	publishCount  int64
+	relaysPublished int64
+}
+
+// New creates a new publisher.
+func New(cfg *config.Config, cache *cache.Client) (*Publisher, error) {
+	p := &Publisher{
+		cfg:   cfg,
+		cache: cache,
+	}
+
+	// Parse private key (supports hex or nsec format)
+	if cfg.PrivateKey != "" {
+		sk, err := parsePrivateKey(cfg.PrivateKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid private key: %w", err)
+		}
+		p.sk = sk
+
+		// Derive public key
+		pk, err := nostr.GetPublicKey(sk)
+		if err != nil {
+			return nil, fmt.Errorf("failed to derive public key: %w", err)
+		}
+		p.pk = pk
+
+		slog.Info("publisher initialized", "pubkey", pk[:16]+"...")
+	} else {
+		slog.Warn("publisher has no private key configured, publishing disabled")
+	}
+
+	return p, nil
+}
+
+// parsePrivateKey parses a private key from hex or nsec format.
+func parsePrivateKey(key string) (string, error) {
+	key = strings.TrimSpace(key)
+
+	// Check if it's nsec format
+	if strings.HasPrefix(key, "nsec1") {
+		_, data, err := nip19.Decode(key)
+		if err != nil {
+			return "", fmt.Errorf("invalid nsec: %w", err)
+		}
+		return data.(string), nil
+	}
+
+	// Assume hex format - validate it
+	if len(key) != 64 {
+		return "", fmt.Errorf("hex key must be 64 characters, got %d", len(key))
+	}
+	if _, err := hex.DecodeString(key); err != nil {
+		return "", fmt.Errorf("invalid hex key: %w", err)
+	}
+
+	return key, nil
+}
+
+// Start begins the publishing loop.
+func (p *Publisher) Start(ctx context.Context) {
+	if p.sk == "" {
+		slog.Info("publisher not starting - no private key configured")
+		return
+	}
+
+	slog.Info("publisher starting",
+		"interval_minutes", p.cfg.PublishInterval,
+		"relays", p.cfg.PublishRelays,
+	)
+
+	ticker := time.NewTicker(time.Duration(p.cfg.PublishInterval) * time.Minute)
+	defer ticker.Stop()
+
+	// Publish immediately on startup
+	p.publishAll(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("publisher stopping")
+			return
+		case <-ticker.C:
+			p.publishAll(ctx)
+		}
+	}
+}
+
+// publishAll publishes all relay entries to configured relays.
+func (p *Publisher) publishAll(ctx context.Context) {
+	// Get all relay URLs from cache
+	urls, err := p.cache.GetAllRelayURLs(ctx)
+	if err != nil {
+		slog.Error("failed to get relay URLs for publishing", "error", err)
+		return
+	}
+
+	if len(urls) == 0 {
+		slog.Debug("no relays to publish")
+		return
+	}
+
+	slog.Info("publishing relay directory entries", "count", len(urls))
+
+	var published int64
+	for _, url := range urls {
+		entry, err := p.cache.GetRelayEntry(ctx, url)
+		if err != nil || entry == nil {
+			continue
+		}
+
+		event := p.createEvent(entry)
+		if err := p.publishEvent(ctx, event); err != nil {
+			slog.Debug("failed to publish relay entry", "url", url, "error", err)
+			continue
+		}
+		published++
+	}
+
+	p.mu.Lock()
+	p.lastPublish = time.Now()
+	p.publishCount++
+	p.relaysPublished = published
+	p.mu.Unlock()
+
+	slog.Info("published relay directory entries",
+		"published", published,
+		"total", len(urls),
+	)
+
+	// Update stats
+	p.cache.SetStat(ctx, "publisher:last_publish", time.Now().Unix())
+	p.cache.SetStat(ctx, "publisher:relays_published", published)
+}
+
+// createEvent creates a kind 30069 event from a relay entry.
+func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
+	tags := nostr.Tags{
+		{"d", entry.URL},
+		{"relay", entry.URL},
+		{"health", entry.Health},
+		{"last_checked", strconv.FormatInt(entry.LastChecked.Unix(), 10)},
+	}
+
+	// Add optional tags
+	if entry.Name != "" {
+		tags = append(tags, nostr.Tag{"name", entry.Name})
+	}
+	if entry.Description != "" {
+		tags = append(tags, nostr.Tag{"description", entry.Description})
+	}
+	if entry.Pubkey != "" {
+		tags = append(tags, nostr.Tag{"operator", entry.Pubkey})
+	}
+	if entry.Software != "" {
+		if entry.Version != "" {
+			tags = append(tags, nostr.Tag{"software", entry.Software, entry.Version})
+		} else {
+			tags = append(tags, nostr.Tag{"software", entry.Software})
+		}
+	}
+	if len(entry.SupportedNIPs) > 0 {
+		nipTag := nostr.Tag{"nips"}
+		for _, nip := range entry.SupportedNIPs {
+			nipTag = append(nipTag, strconv.Itoa(nip))
+		}
+		tags = append(tags, nipTag)
+	}
+	if entry.LatencyMs > 0 {
+		tags = append(tags, nostr.Tag{"latency_ms", strconv.Itoa(entry.LatencyMs)})
+	}
+	if entry.CountryCode != "" {
+		tags = append(tags, nostr.Tag{"location", entry.CountryCode})
+	}
+	if entry.PaymentRequired {
+		tags = append(tags, nostr.Tag{"payment", "paid"})
+	} else {
+		tags = append(tags, nostr.Tag{"payment", "free"})
+	}
+	if entry.AuthRequired {
+		tags = append(tags, nostr.Tag{"admission", "auth"})
+	} else {
+		tags = append(tags, nostr.Tag{"admission", "open"})
+	}
+
+	// Set expiration (next publish cycle + buffer)
+	expiresAt := time.Now().Add(time.Duration(p.cfg.PublishInterval*2) * time.Minute)
+	tags = append(tags, nostr.Tag{"expires", strconv.FormatInt(expiresAt.Unix(), 10)})
+
+	event := &nostr.Event{
+		Kind:      30069,
+		PubKey:    p.pk,
+		CreatedAt: nostr.Timestamp(time.Now().Unix()),
+		Tags:      tags,
+		Content:   "",
+	}
+
+	// Sign the event
+	event.Sign(p.sk)
+
+	return event
+}
+
+// publishEvent publishes an event to all configured relays.
+func (p *Publisher) publishEvent(ctx context.Context, event *nostr.Event) error {
+	var lastErr error
+	var successCount int
+
+	for _, relayURL := range p.cfg.PublishRelays {
+		relay, err := nostr.RelayConnect(ctx, relayURL)
+		if err != nil {
+			lastErr = err
+			slog.Debug("failed to connect to publish relay", "url", relayURL, "error", err)
+			continue
+		}
+
+		err = relay.Publish(ctx, *event)
+		relay.Close()
+
+		if err != nil {
+			lastErr = err
+			slog.Debug("failed to publish to relay", "url", relayURL, "error", err)
+			continue
+		}
+
+		successCount++
+	}
+
+	if successCount == 0 && lastErr != nil {
+		return lastErr
+	}
+
+	return nil
+}
+
+// GetPublicKey returns the publisher's public key.
+func (p *Publisher) GetPublicKey() string {
+	return p.pk
+}
+
+// GetLastPublish returns the time of the last publish cycle.
+func (p *Publisher) GetLastPublish() time.Time {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.lastPublish
+}
+
+// GetPublishCount returns the number of publish cycles completed.
+func (p *Publisher) GetPublishCount() int64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.publishCount
+}
+
+// GetRelaysPublished returns the number of relays published in the last cycle.
+func (p *Publisher) GetRelaysPublished() int64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.relaysPublished
+}

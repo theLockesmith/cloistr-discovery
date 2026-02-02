@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
@@ -13,12 +14,29 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
 
+// PublisherInterface is an interface for getting publisher statistics.
+type PublisherInterface interface {
+	GetPublicKey() string
+	GetLastPublish() time.Time
+	GetPublishCount() int64
+	GetRelaysPublished() int64
+}
+
+// PublisherInfo contains publisher statistics for the dashboard.
+type PublisherInfo struct {
+	LastPublish     time.Time `json:"last_publish"`
+	PublishCount    int64     `json:"publish_count"`
+	RelaysPublished int64     `json:"relays_published"`
+	PublicKey       string    `json:"public_key"`
+}
+
 // Server handles admin API requests.
 type Server struct {
 	cfg         *config.Config
 	cache       *cache.Client
 	monitor     *relay.Monitor
 	coordinator *discovery.Coordinator
+	publisher   PublisherInterface
 }
 
 // NewServer creates a new admin server.
@@ -29,6 +47,11 @@ func NewServer(cfg *config.Config, cache *cache.Client, monitor *relay.Monitor, 
 		monitor:     monitor,
 		coordinator: coordinator,
 	}
+}
+
+// SetPublisher sets the publisher for stats reporting.
+func (s *Server) SetPublisher(p PublisherInterface) {
+	s.publisher = p
 }
 
 // AuthMiddleware validates API key or basic auth credentials.
@@ -89,10 +112,11 @@ func (s *Server) Handler(w http.ResponseWriter, r *http.Request) {
 
 // DashboardResponse contains dashboard statistics.
 type DashboardResponse struct {
-	Relays    RelayStats    `json:"relays"`
-	Discovery DiscoveryInfo `json:"discovery"`
-	Lists     ListCounts    `json:"lists"`
-	Activity  ActivityStats `json:"activity"`
+	Relays    RelayStats     `json:"relays"`
+	Discovery DiscoveryInfo  `json:"discovery"`
+	Lists     ListCounts     `json:"lists"`
+	Activity  ActivityStats  `json:"activity"`
+	Publisher *PublisherInfo `json:"publisher,omitempty"`
 }
 
 // RelayStats contains relay health statistics.
@@ -182,6 +206,16 @@ func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 			StreamsActive:  int64(len(streams)),
 			PubkeysIndexed: pubkeysIndexed,
 		},
+	}
+
+	// Add publisher stats if available
+	if s.publisher != nil {
+		resp.Publisher = &PublisherInfo{
+			LastPublish:     s.publisher.GetLastPublish(),
+			PublishCount:    s.publisher.GetPublishCount(),
+			RelaysPublished: s.publisher.GetRelaysPublished(),
+			PublicKey:       s.publisher.GetPublicKey(),
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

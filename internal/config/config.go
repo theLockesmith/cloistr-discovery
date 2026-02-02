@@ -28,9 +28,11 @@ type Config struct {
 	ActivityTTL int // Minutes before activity expires
 
 	// Publishing settings
-	PublishRelay string // Relay to publish discovery events to
-	PrivateKey   string // nsec for signing events (optional, uses NIP-46 if empty)
-	BunkerURL    string // NIP-46 bunker URL for signing
+	PublishEnabled  bool     // Enable publishing kind 30069 events
+	PublishRelays   []string // Relays to publish discovery events to
+	PublishInterval int      // Minutes between publish cycles
+	PrivateKey      string   // hex or nsec private key for signing events
+	BunkerURL       string   // NIP-46 bunker URL for signing (alternative to PrivateKey)
 
 	// Discovery source settings
 	HostedRelayListURL      string   // URL to fetch relay list from (JSON or newline-separated)
@@ -68,9 +70,11 @@ func Load() (*Config, error) {
 		ActivityTTL:  getEnvInt("ACTIVITY_TTL", 15),
 
 		// Publishing settings
-		PublishRelay: getEnv("PUBLISH_RELAY", "wss://relay.cloistr.xyz"),
-		PrivateKey:   getEnv("NOSTR_PRIVATE_KEY", ""),
-		BunkerURL:    getEnv("BUNKER_URL", ""),
+		PublishEnabled:  getEnvBool("PUBLISH_ENABLED", false),
+		PublishRelays:   getEnvSlice("PUBLISH_RELAYS", []string{"wss://relay.cloistr.xyz"}),
+		PublishInterval: getEnvInt("PUBLISH_INTERVAL", 10),
+		PrivateKey:      getEnv("NOSTR_PRIVATE_KEY", ""),
+		BunkerURL:       getEnv("BUNKER_URL", ""),
 
 		// Discovery source settings
 		HostedRelayListURL:      getEnv("HOSTED_RELAY_LIST_URL", ""),

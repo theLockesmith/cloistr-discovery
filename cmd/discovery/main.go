@@ -22,6 +22,7 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 	"gitlab.com/coldforge/coldforge-discovery/internal/discovery"
 	"gitlab.com/coldforge/coldforge-discovery/internal/inventory"
+	"gitlab.com/coldforge/coldforge-discovery/internal/publisher"
 	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
 
@@ -144,9 +145,27 @@ func main() {
 		activityTracker.Start(bgCtx)
 	}()
 
+	// Start publisher goroutine (if enabled)
+	var eventPublisher *publisher.Publisher
+	if cfg.PublishEnabled {
+		var err error
+		eventPublisher, err = publisher.New(cfg, cacheClient)
+		if err != nil {
+			slog.Error("failed to initialize publisher", "error", err)
+		} else {
+			go func() {
+				slog.Info("starting event publisher")
+				eventPublisher.Start(bgCtx)
+			}()
+		}
+	}
+
 	// Initialize admin interface (if enabled)
 	if cfg.AdminEnabled {
 		adminServer := admin.NewServer(cfg, cacheClient, relayMonitor, discoveryCoordinator)
+		if eventPublisher != nil {
+			adminServer.SetPublisher(eventPublisher)
+		}
 		mux.HandleFunc("/admin/", adminServer.AuthMiddleware(adminServer.Handler))
 		slog.Info("admin interface enabled", "path", "/admin/")
 	}
