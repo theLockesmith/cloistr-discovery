@@ -212,3 +212,181 @@ func (c *Client) ClearActivity(ctx context.Context, pubkey string) error {
 	c.rdb.SRem(ctx, "streams:active", pubkey)
 	return c.rdb.Del(ctx, key).Err()
 }
+
+// Admin key patterns:
+// admin:whitelist         -> Set of relay URLs (always monitor)
+// admin:blacklist         -> Set of relay URLs (never monitor)
+// admin:peers             -> Set of trusted discovery peer pubkeys
+// discovery:seen          -> Set of discovered relay URLs (deduplication)
+// stats:{name}            -> Counter for various stats
+
+// Whitelist management
+
+// AddToWhitelist adds a relay URL to the whitelist (always monitor).
+func (c *Client) AddToWhitelist(ctx context.Context, url string) error {
+	return c.rdb.SAdd(ctx, "admin:whitelist", url).Err()
+}
+
+// RemoveFromWhitelist removes a relay URL from the whitelist.
+func (c *Client) RemoveFromWhitelist(ctx context.Context, url string) error {
+	return c.rdb.SRem(ctx, "admin:whitelist", url).Err()
+}
+
+// GetWhitelist returns all whitelisted relay URLs.
+func (c *Client) GetWhitelist(ctx context.Context) ([]string, error) {
+	return c.rdb.SMembers(ctx, "admin:whitelist").Result()
+}
+
+// IsWhitelisted checks if a relay URL is whitelisted.
+func (c *Client) IsWhitelisted(ctx context.Context, url string) (bool, error) {
+	return c.rdb.SIsMember(ctx, "admin:whitelist", url).Result()
+}
+
+// Blacklist management
+
+// AddToBlacklist adds a relay URL to the blacklist (never monitor).
+func (c *Client) AddToBlacklist(ctx context.Context, url string) error {
+	return c.rdb.SAdd(ctx, "admin:blacklist", url).Err()
+}
+
+// RemoveFromBlacklist removes a relay URL from the blacklist.
+func (c *Client) RemoveFromBlacklist(ctx context.Context, url string) error {
+	return c.rdb.SRem(ctx, "admin:blacklist", url).Err()
+}
+
+// GetBlacklist returns all blacklisted relay URLs.
+func (c *Client) GetBlacklist(ctx context.Context) ([]string, error) {
+	return c.rdb.SMembers(ctx, "admin:blacklist").Result()
+}
+
+// IsBlacklisted checks if a relay URL is blacklisted.
+func (c *Client) IsBlacklisted(ctx context.Context, url string) (bool, error) {
+	return c.rdb.SIsMember(ctx, "admin:blacklist", url).Result()
+}
+
+// Trusted peers management
+
+// AddTrustedPeer adds a pubkey to the trusted discovery peers list.
+func (c *Client) AddTrustedPeer(ctx context.Context, pubkey string) error {
+	return c.rdb.SAdd(ctx, "admin:peers", pubkey).Err()
+}
+
+// RemoveTrustedPeer removes a pubkey from the trusted discovery peers list.
+func (c *Client) RemoveTrustedPeer(ctx context.Context, pubkey string) error {
+	return c.rdb.SRem(ctx, "admin:peers", pubkey).Err()
+}
+
+// GetTrustedPeers returns all trusted discovery peer pubkeys.
+func (c *Client) GetTrustedPeers(ctx context.Context) ([]string, error) {
+	return c.rdb.SMembers(ctx, "admin:peers").Result()
+}
+
+// Discovery deduplication
+
+// MarkRelaySeen marks a relay URL as seen and returns true if it was newly seen.
+func (c *Client) MarkRelaySeen(ctx context.Context, url string) (bool, error) {
+	// SAdd returns 1 if the element was added, 0 if it already existed
+	result, err := c.rdb.SAdd(ctx, "discovery:seen", url).Result()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
+// GetSeenRelays returns all seen relay URLs.
+func (c *Client) GetSeenRelays(ctx context.Context) ([]string, error) {
+	return c.rdb.SMembers(ctx, "discovery:seen").Result()
+}
+
+// ClearSeenRelays clears the seen relays set.
+func (c *Client) ClearSeenRelays(ctx context.Context) error {
+	return c.rdb.Del(ctx, "discovery:seen").Err()
+}
+
+// Stats management
+
+// IncrementStat increments a stats counter.
+func (c *Client) IncrementStat(ctx context.Context, stat string) error {
+	return c.rdb.Incr(ctx, "stats:"+stat).Err()
+}
+
+// DecrementStat decrements a stats counter.
+func (c *Client) DecrementStat(ctx context.Context, stat string) error {
+	return c.rdb.Decr(ctx, "stats:"+stat).Err()
+}
+
+// GetStat retrieves a stats counter value.
+func (c *Client) GetStat(ctx context.Context, stat string) (int64, error) {
+	val, err := c.rdb.Get(ctx, "stats:"+stat).Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return val, err
+}
+
+// SetStat sets a stats counter to a specific value.
+func (c *Client) SetStat(ctx context.Context, stat string, value int64) error {
+	return c.rdb.Set(ctx, "stats:"+stat, value, 0).Err()
+}
+
+// GetAllStats retrieves all stats counters.
+func (c *Client) GetAllStats(ctx context.Context) (map[string]int64, error) {
+	// Scan for all stats keys
+	var cursor uint64
+	stats := make(map[string]int64)
+
+	for {
+		keys, nextCursor, err := c.rdb.Scan(ctx, cursor, "stats:*", 100).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, key := range keys {
+			val, err := c.rdb.Get(ctx, key).Int64()
+			if err != nil && err != redis.Nil {
+				continue
+			}
+			// Strip "stats:" prefix
+			statName := key[6:]
+			stats[statName] = val
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return stats, nil
+}
+
+// GetAllRelayURLs returns all relay URLs currently being monitored.
+func (c *Client) GetAllRelayURLs(ctx context.Context) ([]string, error) {
+	// Scan for all relay keys
+	var cursor uint64
+	var urls []string
+
+	for {
+		keys, nextCursor, err := c.rdb.Scan(ctx, cursor, "relay:wss://*", 100).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, key := range keys {
+			// Skip health keys
+			if len(key) > 13 && key[6:13] == "health:" {
+				continue
+			}
+			// Strip "relay:" prefix
+			url := key[6:]
+			urls = append(urls, url)
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return urls, nil
+}

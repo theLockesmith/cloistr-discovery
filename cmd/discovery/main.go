@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/activity"
+	"gitlab.com/coldforge/coldforge-discovery/internal/admin"
 	"gitlab.com/coldforge/coldforge-discovery/internal/api"
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/discovery"
 	"gitlab.com/coldforge/coldforge-discovery/internal/inventory"
 	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
@@ -109,6 +111,13 @@ func main() {
 		relayMonitor.Start(bgCtx)
 	}()
 
+	// Start discovery coordinator goroutine
+	discoveryCoordinator := discovery.NewCoordinator(cfg, cacheClient, relayMonitor.DiscoveryChannel())
+	go func() {
+		slog.Info("starting discovery coordinator")
+		discoveryCoordinator.Start(bgCtx)
+	}()
+
 	// Start inventory indexing goroutine
 	inventoryIndexer := inventory.NewIndexer(cfg, cacheClient)
 	go func() {
@@ -134,6 +143,13 @@ func main() {
 		}
 		activityTracker.Start(bgCtx)
 	}()
+
+	// Initialize admin interface (if enabled)
+	if cfg.AdminEnabled {
+		adminServer := admin.NewServer(cfg, cacheClient, relayMonitor, discoveryCoordinator)
+		mux.HandleFunc("/admin/", adminServer.AuthMiddleware(adminServer.Handler))
+		slog.Info("admin interface enabled", "path", "/admin/")
+	}
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)

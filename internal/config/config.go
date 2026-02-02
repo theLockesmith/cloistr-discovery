@@ -17,9 +17,9 @@ type Config struct {
 	CacheURL string
 
 	// Relay monitoring settings
-	SeedRelays          []string // Initial relays to monitor
-	RelayCheckInterval  int      // Seconds between relay health checks
-	NIP11Timeout        int      // Seconds to wait for NIP-11 response
+	SeedRelays         []string // Initial relays to monitor
+	RelayCheckInterval int      // Seconds between relay health checks
+	NIP11Timeout       int      // Seconds to wait for NIP-11 response
 
 	// Inventory settings
 	InventoryTTL int // Hours before inventory expires
@@ -31,22 +31,61 @@ type Config struct {
 	PublishRelay string // Relay to publish discovery events to
 	PrivateKey   string // nsec for signing events (optional, uses NIP-46 if empty)
 	BunkerURL    string // NIP-46 bunker URL for signing
+
+	// Discovery source settings
+	HostedRelayListURL      string   // URL to fetch relay list from (JSON or newline-separated)
+	HostedRelayListInterval int      // Minutes between fetches (0 = fetch once on startup)
+	NIP65CrawlEnabled       bool     // Enable NIP-65 crawling (kind 10002 user relay lists)
+	NIP65CrawlInterval      int      // Minutes between crawl cycles
+	NIP66Enabled            bool     // Enable NIP-66 consumption (kind 30166 relay monitors)
+	PeerDiscoveryEnabled    bool     // Enable peer discovery (kind 30069 from trusted peers)
+	TrustedDiscoveryPeers   []string // Pubkeys of trusted discovery services
+
+	// Admin interface settings
+	AdminEnabled  bool   // Enable admin interface
+	AdminAPIKey   string // API key for admin auth (if set, takes precedence)
+	AdminUsername string // Basic auth username (fallback if no API key)
+	AdminPassword string // Basic auth password
 }
 
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:               getEnvInt("DISCOVERY_PORT", 8080),
-		LogLevel:           getEnv("LOG_LEVEL", "info"),
-		CacheURL:           getEnv("CACHE_URL", "redis://localhost:6379"),
+		// Server settings
+		Port:     getEnvInt("DISCOVERY_PORT", 8080),
+		LogLevel: getEnv("LOG_LEVEL", "info"),
+
+		// Cache settings
+		CacheURL: getEnv("CACHE_URL", "redis://localhost:6379"),
+
+		// Relay monitoring settings
 		SeedRelays:         getEnvSlice("SEED_RELAYS", []string{"wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"}),
 		RelayCheckInterval: getEnvInt("RELAY_CHECK_INTERVAL", 300),
 		NIP11Timeout:       getEnvInt("NIP11_TIMEOUT", 10),
-		InventoryTTL:       getEnvInt("INVENTORY_TTL", 12),
-		ActivityTTL:        getEnvInt("ACTIVITY_TTL", 15),
-		PublishRelay:       getEnv("PUBLISH_RELAY", "wss://relay.cloistr.xyz"),
-		PrivateKey:         getEnv("NOSTR_PRIVATE_KEY", ""),
-		BunkerURL:          getEnv("BUNKER_URL", ""),
+
+		// Inventory/Activity settings
+		InventoryTTL: getEnvInt("INVENTORY_TTL", 12),
+		ActivityTTL:  getEnvInt("ACTIVITY_TTL", 15),
+
+		// Publishing settings
+		PublishRelay: getEnv("PUBLISH_RELAY", "wss://relay.cloistr.xyz"),
+		PrivateKey:   getEnv("NOSTR_PRIVATE_KEY", ""),
+		BunkerURL:    getEnv("BUNKER_URL", ""),
+
+		// Discovery source settings
+		HostedRelayListURL:      getEnv("HOSTED_RELAY_LIST_URL", ""),
+		HostedRelayListInterval: getEnvInt("HOSTED_RELAY_LIST_INTERVAL", 60),
+		NIP65CrawlEnabled:       getEnvBool("NIP65_CRAWL_ENABLED", true),
+		NIP65CrawlInterval:      getEnvInt("NIP65_CRAWL_INTERVAL", 30),
+		NIP66Enabled:            getEnvBool("NIP66_ENABLED", true),
+		PeerDiscoveryEnabled:    getEnvBool("PEER_DISCOVERY_ENABLED", true),
+		TrustedDiscoveryPeers:   getEnvSlice("TRUSTED_DISCOVERY_PEERS", []string{}),
+
+		// Admin interface settings
+		AdminEnabled:  getEnvBool("ADMIN_ENABLED", true),
+		AdminAPIKey:   getEnv("ADMIN_API_KEY", ""),
+		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
+		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
 	}
 
 	return cfg, nil
@@ -63,6 +102,18 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if i, err := strconv.Atoi(value); err == nil {
 			return i
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		switch strings.ToLower(value) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
 		}
 	}
 	return defaultValue

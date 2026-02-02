@@ -40,18 +40,27 @@ type Monitor struct {
 
 	mu          sync.RWMutex
 	knownRelays map[string]bool
+
+	// Channel for receiving discovered relays from discovery sources
+	discoveryInput chan string
 }
 
 // NewMonitor creates a new relay monitor.
 func NewMonitor(cfg *config.Config, cache *cache.Client) *Monitor {
 	return &Monitor{
-		cfg:         cfg,
-		cache:       cache,
-		knownRelays: make(map[string]bool),
+		cfg:            cfg,
+		cache:          cache,
+		knownRelays:    make(map[string]bool),
+		discoveryInput: make(chan string, 1000),
 		client: &http.Client{
 			Timeout: time.Duration(cfg.NIP11Timeout) * time.Second,
 		},
 	}
+}
+
+// DiscoveryChannel returns the channel for discovery sources to send relay URLs.
+func (m *Monitor) DiscoveryChannel() chan<- string {
+	return m.discoveryInput
 }
 
 // Start begins the relay monitoring loop.
@@ -59,6 +68,14 @@ func (m *Monitor) Start(ctx context.Context) {
 	// Seed initial relays
 	for _, relay := range m.cfg.SeedRelays {
 		m.AddRelay(relay)
+	}
+
+	// Add whitelisted relays
+	whitelist, err := m.cache.GetWhitelist(ctx)
+	if err == nil {
+		for _, relay := range whitelist {
+			m.AddRelay(relay)
+		}
 	}
 
 	ticker := time.NewTicker(time.Duration(m.cfg.RelayCheckInterval) * time.Second)
@@ -74,8 +91,59 @@ func (m *Monitor) Start(ctx context.Context) {
 			return
 		case <-ticker.C:
 			m.checkAllRelays(ctx)
+		case url := <-m.discoveryInput:
+			m.handleDiscoveredRelay(ctx, url)
 		}
 	}
+}
+
+// handleDiscoveredRelay processes a relay URL from discovery sources.
+func (m *Monitor) handleDiscoveredRelay(ctx context.Context, url string) {
+	url = normalizeURL(url)
+	if url == "" {
+		return
+	}
+
+	// Check if blacklisted
+	isBlacklisted, err := m.cache.IsBlacklisted(ctx, url)
+	if err != nil {
+		slog.Error("failed to check blacklist", "url", url, "error", err)
+		return
+	}
+	if isBlacklisted {
+		slog.Debug("relay is blacklisted, not adding", "url", url)
+		return
+	}
+
+	// Check if already known
+	m.mu.RLock()
+	known := m.knownRelays[url]
+	m.mu.RUnlock()
+
+	if known {
+		return
+	}
+
+	// Add to monitoring
+	m.AddRelay(url)
+	slog.Debug("added discovered relay to monitoring", "url", url)
+
+	// Optionally do an immediate health check
+	go func() {
+		entry, err := m.checkRelay(ctx, url)
+		if err != nil {
+			slog.Debug("initial check for discovered relay failed", "url", url, "error", err)
+			entry = &cache.RelayEntry{
+				URL:         url,
+				Health:      "offline",
+				LastChecked: time.Now(),
+			}
+		}
+
+		if err := m.cache.SetRelayEntry(ctx, entry, time.Hour); err != nil {
+			slog.Error("failed to cache relay entry", "url", url, "error", err)
+		}
+	}()
 }
 
 // AddRelay adds a relay to the monitoring list.
@@ -103,12 +171,26 @@ func (m *Monitor) GetRelays() []string {
 	return relays
 }
 
+// RelayCount returns the number of known relays.
+func (m *Monitor) RelayCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.knownRelays)
+}
+
 func (m *Monitor) checkAllRelays(ctx context.Context) {
 	relays := m.GetRelays()
 	slog.Info("checking relays", "count", len(relays))
 
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Limit concurrent checks
+
+	var (
+		online   int64
+		degraded int64
+		offline  int64
+		mu       sync.Mutex
+	)
 
 	for _, url := range relays {
 		wg.Add(1)
@@ -128,6 +210,18 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 				}
 			}
 
+			// Count health statuses
+			mu.Lock()
+			switch entry.Health {
+			case "online":
+				online++
+			case "degraded":
+				degraded++
+			default:
+				offline++
+			}
+			mu.Unlock()
+
 			if err := m.cache.SetRelayEntry(ctx, entry, time.Hour); err != nil {
 				slog.Error("failed to cache relay entry", "url", relayURL, "error", err)
 			}
@@ -135,7 +229,19 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	}
 
 	wg.Wait()
-	slog.Info("relay check complete")
+
+	// Update stats
+	m.cache.SetStat(ctx, "relays:total", int64(len(relays)))
+	m.cache.SetStat(ctx, "relays:online", online)
+	m.cache.SetStat(ctx, "relays:degraded", degraded)
+	m.cache.SetStat(ctx, "relays:offline", offline)
+
+	slog.Info("relay check complete",
+		"total", len(relays),
+		"online", online,
+		"degraded", degraded,
+		"offline", offline,
+	)
 }
 
 func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry, error) {

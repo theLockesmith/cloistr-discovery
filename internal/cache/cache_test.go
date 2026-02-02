@@ -810,3 +810,275 @@ func TestInventoryMarkers(t *testing.T) {
 		}
 	})
 }
+
+func TestWhitelist(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	t.Run("add and get whitelist", func(t *testing.T) {
+		err := client.AddToWhitelist(ctx, "wss://relay1.example.com")
+		if err != nil {
+			t.Fatalf("AddToWhitelist() error: %v", err)
+		}
+
+		err = client.AddToWhitelist(ctx, "wss://relay2.example.com")
+		if err != nil {
+			t.Fatalf("AddToWhitelist() error: %v", err)
+		}
+
+		whitelist, err := client.GetWhitelist(ctx)
+		if err != nil {
+			t.Fatalf("GetWhitelist() error: %v", err)
+		}
+
+		if len(whitelist) != 2 {
+			t.Errorf("GetWhitelist() len = %v, want 2", len(whitelist))
+		}
+	})
+
+	t.Run("is whitelisted", func(t *testing.T) {
+		isWhitelisted, err := client.IsWhitelisted(ctx, "wss://relay1.example.com")
+		if err != nil {
+			t.Fatalf("IsWhitelisted() error: %v", err)
+		}
+		if !isWhitelisted {
+			t.Error("IsWhitelisted() = false, want true")
+		}
+
+		isWhitelisted, err = client.IsWhitelisted(ctx, "wss://unknown.example.com")
+		if err != nil {
+			t.Fatalf("IsWhitelisted() error: %v", err)
+		}
+		if isWhitelisted {
+			t.Error("IsWhitelisted() = true, want false")
+		}
+	})
+
+	t.Run("remove from whitelist", func(t *testing.T) {
+		err := client.RemoveFromWhitelist(ctx, "wss://relay1.example.com")
+		if err != nil {
+			t.Fatalf("RemoveFromWhitelist() error: %v", err)
+		}
+
+		isWhitelisted, _ := client.IsWhitelisted(ctx, "wss://relay1.example.com")
+		if isWhitelisted {
+			t.Error("IsWhitelisted() after remove = true, want false")
+		}
+	})
+}
+
+func TestBlacklist(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	t.Run("add and get blacklist", func(t *testing.T) {
+		err := client.AddToBlacklist(ctx, "wss://spam.example.com")
+		if err != nil {
+			t.Fatalf("AddToBlacklist() error: %v", err)
+		}
+
+		blacklist, err := client.GetBlacklist(ctx)
+		if err != nil {
+			t.Fatalf("GetBlacklist() error: %v", err)
+		}
+
+		if len(blacklist) != 1 {
+			t.Errorf("GetBlacklist() len = %v, want 1", len(blacklist))
+		}
+	})
+
+	t.Run("is blacklisted", func(t *testing.T) {
+		isBlacklisted, err := client.IsBlacklisted(ctx, "wss://spam.example.com")
+		if err != nil {
+			t.Fatalf("IsBlacklisted() error: %v", err)
+		}
+		if !isBlacklisted {
+			t.Error("IsBlacklisted() = false, want true")
+		}
+	})
+
+	t.Run("remove from blacklist", func(t *testing.T) {
+		err := client.RemoveFromBlacklist(ctx, "wss://spam.example.com")
+		if err != nil {
+			t.Fatalf("RemoveFromBlacklist() error: %v", err)
+		}
+
+		isBlacklisted, _ := client.IsBlacklisted(ctx, "wss://spam.example.com")
+		if isBlacklisted {
+			t.Error("IsBlacklisted() after remove = true, want false")
+		}
+	})
+}
+
+func TestTrustedPeers(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	t.Run("add and get trusted peers", func(t *testing.T) {
+		pubkey1 := "abc123def456"
+		pubkey2 := "789xyz000111"
+
+		err := client.AddTrustedPeer(ctx, pubkey1)
+		if err != nil {
+			t.Fatalf("AddTrustedPeer() error: %v", err)
+		}
+
+		err = client.AddTrustedPeer(ctx, pubkey2)
+		if err != nil {
+			t.Fatalf("AddTrustedPeer() error: %v", err)
+		}
+
+		peers, err := client.GetTrustedPeers(ctx)
+		if err != nil {
+			t.Fatalf("GetTrustedPeers() error: %v", err)
+		}
+
+		if len(peers) != 2 {
+			t.Errorf("GetTrustedPeers() len = %v, want 2", len(peers))
+		}
+	})
+
+	t.Run("remove trusted peer", func(t *testing.T) {
+		err := client.RemoveTrustedPeer(ctx, "abc123def456")
+		if err != nil {
+			t.Fatalf("RemoveTrustedPeer() error: %v", err)
+		}
+
+		peers, _ := client.GetTrustedPeers(ctx)
+		if len(peers) != 1 {
+			t.Errorf("GetTrustedPeers() after remove len = %v, want 1", len(peers))
+		}
+	})
+}
+
+func TestDiscoveryDeduplication(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	t.Run("mark relay seen returns true for new relay", func(t *testing.T) {
+		isNew, err := client.MarkRelaySeen(ctx, "wss://new-relay.example.com")
+		if err != nil {
+			t.Fatalf("MarkRelaySeen() error: %v", err)
+		}
+		if !isNew {
+			t.Error("MarkRelaySeen() = false, want true for new relay")
+		}
+	})
+
+	t.Run("mark relay seen returns false for existing relay", func(t *testing.T) {
+		isNew, err := client.MarkRelaySeen(ctx, "wss://new-relay.example.com")
+		if err != nil {
+			t.Fatalf("MarkRelaySeen() error: %v", err)
+		}
+		if isNew {
+			t.Error("MarkRelaySeen() = true, want false for existing relay")
+		}
+	})
+
+	t.Run("get seen relays", func(t *testing.T) {
+		client.MarkRelaySeen(ctx, "wss://another-relay.example.com")
+
+		seen, err := client.GetSeenRelays(ctx)
+		if err != nil {
+			t.Fatalf("GetSeenRelays() error: %v", err)
+		}
+		if len(seen) != 2 {
+			t.Errorf("GetSeenRelays() len = %v, want 2", len(seen))
+		}
+	})
+
+	t.Run("clear seen relays", func(t *testing.T) {
+		err := client.ClearSeenRelays(ctx)
+		if err != nil {
+			t.Fatalf("ClearSeenRelays() error: %v", err)
+		}
+
+		seen, _ := client.GetSeenRelays(ctx)
+		if len(seen) != 0 {
+			t.Errorf("GetSeenRelays() after clear len = %v, want 0", len(seen))
+		}
+	})
+}
+
+func TestStats(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	t.Run("increment and get stat", func(t *testing.T) {
+		err := client.IncrementStat(ctx, "relays:total")
+		if err != nil {
+			t.Fatalf("IncrementStat() error: %v", err)
+		}
+
+		err = client.IncrementStat(ctx, "relays:total")
+		if err != nil {
+			t.Fatalf("IncrementStat() error: %v", err)
+		}
+
+		val, err := client.GetStat(ctx, "relays:total")
+		if err != nil {
+			t.Fatalf("GetStat() error: %v", err)
+		}
+		if val != 2 {
+			t.Errorf("GetStat() = %v, want 2", val)
+		}
+	})
+
+	t.Run("decrement stat", func(t *testing.T) {
+		err := client.DecrementStat(ctx, "relays:total")
+		if err != nil {
+			t.Fatalf("DecrementStat() error: %v", err)
+		}
+
+		val, _ := client.GetStat(ctx, "relays:total")
+		if val != 1 {
+			t.Errorf("GetStat() after decrement = %v, want 1", val)
+		}
+	})
+
+	t.Run("set stat", func(t *testing.T) {
+		err := client.SetStat(ctx, "relays:online", 100)
+		if err != nil {
+			t.Fatalf("SetStat() error: %v", err)
+		}
+
+		val, _ := client.GetStat(ctx, "relays:online")
+		if val != 100 {
+			t.Errorf("GetStat() = %v, want 100", val)
+		}
+	})
+
+	t.Run("get non-existent stat returns 0", func(t *testing.T) {
+		val, err := client.GetStat(ctx, "nonexistent")
+		if err != nil {
+			t.Fatalf("GetStat() error: %v", err)
+		}
+		if val != 0 {
+			t.Errorf("GetStat() for nonexistent = %v, want 0", val)
+		}
+	})
+
+	t.Run("get all stats", func(t *testing.T) {
+		client.SetStat(ctx, "discovery:nip65", 50)
+		client.SetStat(ctx, "discovery:nip66", 25)
+
+		stats, err := client.GetAllStats(ctx)
+		if err != nil {
+			t.Fatalf("GetAllStats() error: %v", err)
+		}
+
+		if len(stats) < 3 {
+			t.Errorf("GetAllStats() len = %v, want >= 3", len(stats))
+		}
+	})
+}

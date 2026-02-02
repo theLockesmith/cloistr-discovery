@@ -127,15 +127,24 @@ Environment variables:
 - [x] Write unit tests for API handlers (11 tests)
 - [x] Test locally with Docker Compose
 - [x] Fix critical issues from code review (event loop breaks, context management)
+- [x] Configure Atlas role for Kubernetes deployment
+  - Updated to use cluster-wide Dragonfly instance
+  - Enabled ingress for discovery.coldforge.xyz
+  - Created reference K8s manifests in deploy/k8s/
+  - Documented deployment procedures in DEPLOYMENT.md
 
 ## Next Steps
 
-1. Deploy Dragonfly to Atlantis
-2. Create Atlas role for Kubernetes deployment
-3. Integration test with live relays
+1. **Deploy to Atlantis** - Use Atlas to deploy to production cluster
+   ```bash
+   atlas kube apply coldforge-discovery --kube-context atlantis
+   ```
+2. **Integration test with live relays** - Verify NDP protocol implementation
+3. **Monitor production metrics** - Check Prometheus/Grafana dashboards
 4. Add health check verification for background services
 5. Implement exponential backoff for relay reconnections
 6. Add TTL expiration tests
+7. Consider HorizontalPodAutoscaler for automatic scaling
 
 ## See Also
 
