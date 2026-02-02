@@ -9,14 +9,24 @@ services:
       - DISCOVERY_PORT=8080
       - LOG_LEVEL=debug
       - CACHE_URL=redis://dragonfly:6379
-      - SEED_RELAYS=wss://relay.damus.io,wss://nos.lol,wss://relay.nostr.band,wss://relay.cloistr.xyz
+      # Use local relay + cloistr for testing
+      - SEED_RELAYS=ws://relay:8080,wss://relay.cloistr.xyz
       - RELAY_CHECK_INTERVAL=60
       - NIP11_TIMEOUT=10
       - INVENTORY_TTL=12
       - ACTIVITY_TTL=15
-      - PUBLISH_RELAY=wss://relay.cloistr.xyz
+      # Publishing configuration
+      - PUBLISH_ENABLED=true
+      - PUBLISH_RELAYS=ws://relay:8080,wss://relay.cloistr.xyz
+      - PUBLISH_INTERVAL=5
+      # Test private key (generate fresh for production!)
+      - NOSTR_PRIVATE_KEY=${NOSTR_PRIVATE_KEY:-}
+      # Admin interface
+      - ADMIN_ENABLED=true
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-testkey123}
     depends_on:
       - dragonfly
+      - relay
     restart: unless-stopped
 
   dragonfly:
@@ -32,5 +42,16 @@ services:
       - --snapshot_cron=*/30 * * * *
     restart: unless-stopped
 
+  # Local Nostr relay for testing
+  relay:
+    image: scsibug/nostr-rs-relay:latest
+    ports:
+      - "17080:8080"
+    volumes:
+      - relay_data:/usr/src/app/db
+      - ./configs/relay-config.toml:/usr/src/app/config.toml:ro
+    restart: unless-stopped
+
 volumes:
   dragonfly_data:
+  relay_data:

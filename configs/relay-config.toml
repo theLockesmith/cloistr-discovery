@@ -1,0 +1,38 @@
+# nostr-rs-relay configuration for NDP testing
+# This relay accepts all NDP event kinds for testing purposes
+
+[info]
+relay_url = "ws://localhost:8080"
+name = "NDP Test Relay"
+description = "Local relay for testing Nostr Discovery Protocol"
+pubkey = ""
+contact = ""
+
+[database]
+engine = "sqlite"
+data_directory = "/usr/src/app/db"
+
+[network]
+port = 8080
+address = "0.0.0.0"
+ping_interval = 300
+
+[limits]
+messages_per_sec = 50
+subscriptions_per_min = 100
+max_event_bytes = 131072
+max_ws_message_bytes = 131072
+max_ws_frame_bytes = 131072
+broadcast_buffer = 16384
+event_persist_buffer = 4096
+
+[authorization]
+# Allow all events for testing
+pubkey_whitelist = []
+
+[verified_users]
+# No verification required for testing
+mode = "disabled"
+
+[pay_to_relay]
+enabled = false
