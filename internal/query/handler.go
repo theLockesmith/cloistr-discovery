@@ -534,6 +534,7 @@ func (h *Handler) handleOnlineUsers(ctx context.Context, query Query) ([]*nostr.
 }
 
 // publishResponses publishes response events to the specified relay.
+// Handles NIP-42 auth if the relay requires it.
 func (h *Handler) publishResponses(ctx context.Context, relayURL string, responses []*nostr.Event, queryID string) {
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
@@ -542,22 +543,55 @@ func (h *Handler) publishResponses(ctx context.Context, relayURL string, respons
 	}
 	defer relay.Close()
 
+	authAttempted := false
+	published := 0
+
 	for _, event := range responses {
 		// Add reference to original query
 		event.Tags = append(event.Tags, nostr.Tag{"e", queryID, "", "reply"})
 		event.Sign(h.sk) // Re-sign with updated tags
 
-		if err := relay.Publish(ctx, *event); err != nil {
-			slog.Debug("failed to publish response", "url", relayURL, "error", err)
+		err := relay.Publish(ctx, *event)
+		if err == nil {
+			published++
 			continue
 		}
+
+		// Check if auth is required
+		errStr := err.Error()
+		if strings.Contains(errStr, "auth-required") && !authAttempted {
+			authAttempted = true
+			slog.Debug("response relay requires auth, authenticating", "url", relayURL)
+
+			authErr := relay.Auth(ctx, func(authEvent *nostr.Event) error {
+				return authEvent.Sign(h.sk)
+			})
+			if authErr != nil {
+				slog.Warn("NIP-42 auth failed for response relay", "url", relayURL, "error", authErr)
+				return
+			}
+			slog.Info("NIP-42 auth successful for response relay", "url", relayURL)
+
+			// Retry this event after auth
+			if retryErr := relay.Publish(ctx, *event); retryErr != nil {
+				slog.Debug("publish response still failed after auth", "url", relayURL, "error", retryErr)
+			} else {
+				published++
+			}
+			continue
+		}
+
+		slog.Debug("failed to publish response", "url", relayURL, "error", err)
 	}
 
-	slog.Debug("published query responses",
-		"relay", relayURL,
-		"count", len(responses),
-		"query_id", queryID[:16],
-	)
+	if published > 0 {
+		slog.Debug("published query responses",
+			"relay", relayURL,
+			"count", published,
+			"total", len(responses),
+			"query_id", queryID[:16],
+		)
+	}
 }
 
 // Stats returns query handler statistics.

@@ -129,21 +129,24 @@ func (p *Publisher) publishAll(ctx context.Context) {
 		return
 	}
 
-	slog.Info("publishing relay directory entries", "count", len(urls))
-
-	var published int64
+	// Build events from cache
+	var events []*nostr.Event
 	for _, url := range urls {
 		entry, err := p.cache.GetRelayEntry(ctx, url)
 		if err != nil || entry == nil {
 			continue
 		}
+		events = append(events, p.createEvent(entry))
+	}
 
-		event := p.createEvent(entry)
-		if err := p.publishEvent(ctx, event); err != nil {
-			slog.Debug("failed to publish relay entry", "url", url, "error", err)
-			continue
+	slog.Info("publishing relay directory entries", "count", len(events))
+
+	var published int64
+	for _, relayURL := range p.cfg.PublishRelays {
+		count := p.publishToRelay(ctx, relayURL, events)
+		if count > published {
+			published = count
 		}
-		published++
 	}
 
 	p.mu.Lock()
@@ -154,12 +157,65 @@ func (p *Publisher) publishAll(ctx context.Context) {
 
 	slog.Info("published relay directory entries",
 		"published", published,
-		"total", len(urls),
+		"total", len(events),
 	)
 
 	// Update stats
 	p.cache.SetStat(ctx, "publisher:last_publish", time.Now().Unix())
 	p.cache.SetStat(ctx, "publisher:relays_published", published)
+}
+
+// publishToRelay connects to a single relay, authenticates if needed, and publishes all events.
+func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events []*nostr.Event) int64 {
+	relay, err := nostr.RelayConnect(ctx, relayURL)
+	if err != nil {
+		slog.Debug("failed to connect to publish relay", "url", relayURL, "error", err)
+		return 0
+	}
+	defer relay.Close()
+
+	var published int64
+	authAttempted := false
+
+	for _, event := range events {
+		err := relay.Publish(ctx, *event)
+		if err == nil {
+			published++
+			continue
+		}
+
+		// Check if auth is required
+		errStr := err.Error()
+		if strings.Contains(errStr, "auth-required") && !authAttempted {
+			authAttempted = true
+			slog.Debug("relay requires auth, authenticating", "url", relayURL)
+
+			authErr := relay.Auth(ctx, func(authEvent *nostr.Event) error {
+				return authEvent.Sign(p.sk)
+			})
+			if authErr != nil {
+				slog.Warn("NIP-42 auth failed", "url", relayURL, "error", authErr)
+				return published
+			}
+			slog.Info("NIP-42 auth successful", "url", relayURL)
+
+			// Retry this event after auth
+			if retryErr := relay.Publish(ctx, *event); retryErr != nil {
+				slog.Debug("publish still failed after auth", "url", relayURL, "error", retryErr)
+			} else {
+				published++
+			}
+			continue
+		}
+
+		slog.Debug("failed to publish to relay", "url", relayURL, "error", err)
+	}
+
+	if published > 0 {
+		slog.Debug("published to relay", "url", relayURL, "count", published)
+	}
+
+	return published
 }
 
 // createEvent creates a kind 30069 event from a relay entry.
