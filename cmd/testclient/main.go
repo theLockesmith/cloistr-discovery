@@ -36,6 +36,7 @@ func main() {
 	nips := flag.String("nips", "", "NIP filter (comma-separated)")
 	activityType := flag.String("activity", "online", "Activity type for publish-activity")
 	inventoryRelay := flag.String("inventory-relay", "", "Relay URL for inventory event")
+	responseRelay := flag.String("response-relay", "", "Response relay for queries (default: same as -relay)")
 
 	// Timeout
 	timeout := flag.Duration("timeout", 30*time.Second, "Timeout for operations")
@@ -78,7 +79,11 @@ func main() {
 			fmt.Println("Error: -sk (private key) required")
 			os.Exit(1)
 		}
-		publishQuery(ctx, *relayURL, sk, *queryType, *targetPubkey, *health, *nips)
+		respRelay := *responseRelay
+		if respRelay == "" {
+			respRelay = *relayURL
+		}
+		publishQuery(ctx, *relayURL, sk, *queryType, *targetPubkey, *health, *nips, respRelay)
 
 	case "query-http":
 		queryHTTP(ctx, *apiURL, *targetPubkey, *health)
@@ -268,7 +273,7 @@ func publishActivity(ctx context.Context, relayURL, sk, activityType string) {
 	printEventJSON(event)
 }
 
-func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, health, nips string) {
+func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, health, nips, responseRelayURL string) {
 	pk, _ := nostr.GetPublicKey(sk)
 
 	fmt.Printf("Publishing kind 30068 (Discovery Query) to %s\n", relayURL)
@@ -276,7 +281,7 @@ func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, he
 
 	tags := nostr.Tags{
 		{"query_type", queryType},
-		{"response_relay", relayURL}, // Request response on same relay
+		{"response_relay", responseRelayURL},
 		{"limit", "10"},
 	}
 

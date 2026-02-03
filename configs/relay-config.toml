@@ -1,5 +1,5 @@
 # nostr-rs-relay configuration for NDP testing
-# This relay accepts all NDP event kinds for testing purposes
+# Open relay - accepts all events for testing
 
 [info]
 relay_url = "ws://localhost:8080"
@@ -25,14 +25,3 @@ max_ws_message_bytes = 131072
 max_ws_frame_bytes = 131072
 broadcast_buffer = 16384
 event_persist_buffer = 4096
-
-[authorization]
-# Allow all events for testing
-pubkey_whitelist = []
-
-[verified_users]
-# No verification required for testing
-mode = "disabled"
-
-[pay_to_relay]
-enabled = false
