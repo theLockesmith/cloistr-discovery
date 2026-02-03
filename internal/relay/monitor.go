@@ -1,5 +1,5 @@
 // Package relay handles relay monitoring and health checking.
-// Implements Kind 30069 (Relay Directory Entry) from NDP.
+// Implements Kind 30072 (Relay Directory Entry) from NDP.
 package relay
 
 import (
@@ -76,6 +76,15 @@ func (m *Monitor) Start(ctx context.Context) {
 		for _, relay := range whitelist {
 			m.AddRelay(relay)
 		}
+	}
+
+	// Load previously discovered relays from cache so they survive restarts
+	seen, err := m.cache.GetSeenRelays(ctx)
+	if err == nil && len(seen) > 0 {
+		for _, relay := range seen {
+			m.AddRelay(relay)
+		}
+		slog.Info("loaded previously discovered relays", "count", len(seen))
 	}
 
 	ticker := time.NewTicker(time.Duration(m.cfg.RelayCheckInterval) * time.Second)

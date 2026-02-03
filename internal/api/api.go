@@ -100,9 +100,11 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	var relayURLs []string
+	hasFilters := false
 
 	// Filter by NIP if specified
 	if nipsParam := q.Get("nips"); nipsParam != "" {
+		hasFilters = true
 		nips := strings.Split(nipsParam, ",")
 		for _, nipStr := range nips {
 			nip, err := strconv.Atoi(strings.TrimSpace(nipStr))
@@ -125,6 +127,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Filter by location if specified
 	if loc := q.Get("location"); loc != "" {
+		hasFilters = true
 		urls, err := s.cache.GetRelaysByLocation(ctx, loc)
 		if err != nil {
 			slog.Error("failed to get relays by location", "location", loc, "error", err)
@@ -134,6 +137,16 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 			} else {
 				relayURLs = intersect(relayURLs, urls)
 			}
+		}
+	}
+
+	// If no filters specified, return all known relays
+	if !hasFilters {
+		urls, err := s.cache.GetAllRelayURLs(ctx)
+		if err != nil {
+			slog.Error("failed to get all relay URLs", "error", err)
+		} else {
+			relayURLs = urls
 		}
 	}
 

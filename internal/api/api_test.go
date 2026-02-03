@@ -152,12 +152,27 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusMethodNotAllowed,
 		},
 		{
-			name:           "no filters returns empty list",
+			name:           "no filters returns all relays",
 			method:         http.MethodGet,
 			queryParams:    "",
 			wantStatusCode: http.StatusOK,
-			wantMinRelays:  0,
-			wantMaxRelays:  0,
+			wantMinRelays:  4,
+			wantMaxRelays:  4,
+		},
+		{
+			name:           "health filter only returns matching relays",
+			method:         http.MethodGet,
+			queryParams:    "?health=online",
+			wantStatusCode: http.StatusOK,
+			wantMinRelays:  2,
+			wantMaxRelays:  2,
+			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+				for _, r := range relays {
+					if r.Health != "online" {
+						t.Errorf("relay %s health = %s, want online", r.URL, r.Health)
+					}
+				}
+			},
 		},
 		{
 			name:           "filter by single NIP",
