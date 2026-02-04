@@ -30,6 +30,13 @@ type NIP11Info struct {
 		AuthRequired    bool `json:"auth_required"`
 		PaymentRequired bool `json:"payment_required"`
 	} `json:"limitation"`
+
+	// Extended fields for relay-based segregation (may be absent from most relays)
+	ContentPolicy    string   `json:"content_policy,omitempty"`    // anything, sfw, nsfw-allowed, nsfw-only
+	Moderation       string   `json:"moderation,omitempty"`        // unmoderated, light, active, strict
+	ModerationPolicy string   `json:"moderation_policy,omitempty"` // URL to relay rules
+	Community        string   `json:"community,omitempty"`         // community name
+	Languages        []string `json:"languages,omitempty"`         // ISO 639-1 codes
 }
 
 // Monitor continuously checks relay health and updates the cache.
@@ -294,18 +301,23 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 	}
 
 	entry := &cache.RelayEntry{
-		URL:             url,
-		Name:            info.Name,
-		Description:     info.Description,
-		Pubkey:          info.Pubkey,
-		SupportedNIPs:   info.SupportedNIPs,
-		Software:        info.Software,
-		Version:         info.Version,
-		Health:          health,
-		LatencyMs:       int(latency.Milliseconds()),
-		LastChecked:     time.Now(),
-		PaymentRequired: info.Limitation.PaymentRequired,
-		AuthRequired:    info.Limitation.AuthRequired,
+		URL:              url,
+		Name:             info.Name,
+		Description:      info.Description,
+		Pubkey:           info.Pubkey,
+		SupportedNIPs:    info.SupportedNIPs,
+		Software:         info.Software,
+		Version:          info.Version,
+		Health:           health,
+		LatencyMs:        int(latency.Milliseconds()),
+		LastChecked:      time.Now(),
+		PaymentRequired:  info.Limitation.PaymentRequired,
+		AuthRequired:     info.Limitation.AuthRequired,
+		ContentPolicy:    info.ContentPolicy,
+		Moderation:       info.Moderation,
+		ModerationPolicy: info.ModerationPolicy,
+		Community:        info.Community,
+		Languages:        info.Languages,
 	}
 
 	return entry, nil

@@ -12,7 +12,7 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 )
 
-// PeerDiscovery discovers relays from trusted discovery service peers (kind 30069).
+// PeerDiscovery discovers relays from trusted discovery service peers (kind 30072).
 type PeerDiscovery struct {
 	cfg    *config.Config
 	cache  *cache.Client
@@ -80,10 +80,10 @@ func (p *PeerDiscovery) discoverFromRelay(ctx context.Context, relayURL string) 
 	}
 	defer relay.Close()
 
-	// Subscribe to kind 30069 (relay directory entry) events from trusted peers
+	// Subscribe to kind 30072 (relay directory entry) events from trusted peers
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{
-			Kinds:   []int{30069},
+			Kinds:   []int{30072},
 			Authors: trustedPeers,
 		},
 	})
@@ -141,7 +141,7 @@ func (p *PeerDiscovery) getTrustedPeers(ctx context.Context) []string {
 
 // processPeerEvent extracts relay URLs from a peer's relay directory entry.
 func (p *PeerDiscovery) processPeerEvent(ctx context.Context, event *nostr.Event) {
-	if event.Kind != 30069 {
+	if event.Kind != 30072 {
 		return
 	}
 

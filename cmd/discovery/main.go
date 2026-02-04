@@ -1,8 +1,10 @@
 // Package main is the entry point for coldforge-discovery.
 // Coldforge Discovery implements the Nostr Discovery Protocol (NDP):
-// - Relay Discovery (Kind 30069): Monitor and catalog Nostr relays
-// - Content Routing (Kind 30066): Index which relays have which pubkeys
-// - Activity Discovery (Kind 30067): Track real-time user activities
+// - Relay Inventory (Kind 30069): Index which relays have which pubkeys
+// - Activity Announcement (Kind 30070): Track real-time user activities
+// - Discovery Query (Kind 30071): Handle relay discovery queries
+// - Relay Directory Entry (Kind 30072): Publish verified relay information
+// - Relay Annotation (Kind 30073): Aggregate community topic/atmosphere data
 package main
 
 import (
@@ -17,6 +19,7 @@ import (
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/activity"
 	"gitlab.com/coldforge/coldforge-discovery/internal/admin"
+	"gitlab.com/coldforge/coldforge-discovery/internal/annotation"
 	"gitlab.com/coldforge/coldforge-discovery/internal/api"
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
@@ -145,6 +148,24 @@ func main() {
 		}
 		activityTracker.Start(bgCtx)
 	}()
+
+	// Start annotation aggregator goroutine (Kind 30073)
+	annotationAgg, err := annotation.NewAggregator(cfg, cfg.CacheURL)
+	if err != nil {
+		slog.Error("failed to initialize annotation aggregator", "error", err)
+	} else {
+		go func() {
+			slog.Info("starting annotation aggregator")
+			// Subscribe to seed relays for annotation events
+			for _, relayURL := range cfg.SeedRelays {
+				if err := annotationAgg.SubscribeToRelay(bgCtx, relayURL); err != nil {
+					slog.Error("failed to subscribe to relay for annotations", "url", relayURL, "error", err)
+				}
+			}
+			annotationAgg.Start(bgCtx)
+		}()
+		defer annotationAgg.Close()
+	}
 
 	// Start publisher goroutine (if enabled)
 	var eventPublisher *publisher.Publisher

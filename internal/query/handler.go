@@ -1,4 +1,4 @@
-// Package query handles kind 30068 discovery query events.
+// Package query handles kind 30071 discovery query events.
 // Clients publish queries, we respond with the requested information.
 package query
 
@@ -19,7 +19,7 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 )
 
-// Handler processes kind 30068 discovery queries.
+// Handler processes kind 30071 discovery queries.
 type Handler struct {
 	cfg   *config.Config
 	cache *cache.Client
@@ -92,7 +92,7 @@ func (h *Handler) Start(ctx context.Context) {
 
 	slog.Info("query handler starting", "seed_relays", len(h.cfg.SeedRelays))
 
-	// Subscribe to seed relays for kind 30068 events
+	// Subscribe to seed relays for kind 30071 events
 	for _, relayURL := range h.cfg.SeedRelays {
 		go h.subscribeToRelay(ctx, relayURL)
 	}
@@ -130,11 +130,11 @@ func (h *Handler) listenForQueries(ctx context.Context, relayURL string) {
 	}
 	defer relay.Close()
 
-	// Subscribe to kind 30068 events
+	// Subscribe to kind 30071 events
 	since := nostr.Timestamp(time.Now().Add(-5 * time.Minute).Unix())
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{
-			Kinds: []int{30068},
+			Kinds: []int{30071},
 			Since: &since,
 		},
 	})
@@ -162,7 +162,7 @@ eventLoop:
 
 // handleQuery processes a single discovery query.
 func (h *Handler) handleQuery(ctx context.Context, event *nostr.Event) {
-	if event.Kind != 30068 {
+	if event.Kind != 30071 {
 		return
 	}
 
@@ -229,6 +229,11 @@ type Query struct {
 	Admission     string
 	Limit         int
 	Topics        []string
+	Atmospheres   []string
+	ContentPolicy string
+	Moderation    string
+	Language      string
+	Community     string
 }
 
 // parseQuery extracts query parameters from event tags.
@@ -272,6 +277,16 @@ func (h *Handler) parseQuery(event *nostr.Event) Query {
 			}
 		case "t":
 			q.Topics = append(q.Topics, tag[1])
+		case "atmosphere":
+			q.Atmospheres = append(q.Atmospheres, tag[1])
+		case "content_policy":
+			q.ContentPolicy = tag[1]
+		case "moderation":
+			q.Moderation = tag[1]
+		case "language":
+			q.Language = tag[1]
+		case "community":
+			q.Community = tag[1]
 		}
 	}
 
@@ -312,7 +327,7 @@ func (h *Handler) createPubkeyLocationResponse(pubkey string, relays []string) *
 	}
 
 	event := &nostr.Event{
-		Kind:      30069, // Use relay directory entry kind for responses
+		Kind:      30072, // Use relay directory entry kind for responses
 		PubKey:    h.pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags:      tags,
@@ -326,20 +341,131 @@ func (h *Handler) createPubkeyLocationResponse(pubkey string, relays []string) *
 // handleFindRelays finds relays matching specified criteria.
 func (h *Handler) handleFindRelays(ctx context.Context, query Query) ([]*nostr.Event, error) {
 	var candidateURLs []string
+	hasInitialFilter := false
 
-	// Start with all relays or filter by NIP/location
+	// Build candidate set using index lookups
+	// NIP filter (AND logic - intersect results for each NIP)
 	if len(query.NIPs) > 0 {
-		// Get relays supporting first NIP, then filter
-		urls, err := h.cache.GetRelaysByNIP(ctx, query.NIPs[0])
-		if err == nil {
-			candidateURLs = urls
+		hasInitialFilter = true
+		for _, nip := range query.NIPs {
+			urls, err := h.cache.GetRelaysByNIP(ctx, nip)
+			if err != nil {
+				continue
+			}
+			if len(candidateURLs) == 0 {
+				candidateURLs = urls
+			} else {
+				candidateURLs = intersectStrings(candidateURLs, urls)
+			}
 		}
-	} else if query.Location != "" {
+	}
+
+	// Location filter
+	if query.Location != "" {
+		hasInitialFilter = true
 		urls, err := h.cache.GetRelaysByLocation(ctx, query.Location)
 		if err == nil {
-			candidateURLs = urls
+			if len(candidateURLs) == 0 {
+				candidateURLs = urls
+			} else {
+				candidateURLs = intersectStrings(candidateURLs, urls)
+			}
 		}
-	} else {
+	}
+
+	// Topic filter (OR logic - union of topics, then intersect with candidates)
+	if len(query.Topics) > 0 {
+		hasInitialFilter = true
+		var topicURLs []string
+		for _, topic := range query.Topics {
+			urls, err := h.cache.GetRelaysByTopic(ctx, topic)
+			if err == nil {
+				topicURLs = unionStrings(topicURLs, urls)
+			}
+		}
+		if len(candidateURLs) == 0 {
+			candidateURLs = topicURLs
+		} else {
+			candidateURLs = intersectStrings(candidateURLs, topicURLs)
+		}
+	}
+
+	// Atmosphere filter (OR logic - union of atmospheres, then intersect)
+	if len(query.Atmospheres) > 0 {
+		hasInitialFilter = true
+		var atmURLs []string
+		for _, atm := range query.Atmospheres {
+			urls, err := h.cache.GetRelaysByAtmosphere(ctx, atm)
+			if err == nil {
+				atmURLs = unionStrings(atmURLs, urls)
+			}
+		}
+		if len(candidateURLs) == 0 {
+			candidateURLs = atmURLs
+		} else {
+			candidateURLs = intersectStrings(candidateURLs, atmURLs)
+		}
+	}
+
+	// Content policy filter
+	if query.ContentPolicy != "" {
+		hasInitialFilter = true
+		urls, err := h.cache.GetRelaysByContentPolicy(ctx, query.ContentPolicy)
+		if err == nil {
+			if len(candidateURLs) == 0 {
+				candidateURLs = urls
+			} else {
+				candidateURLs = intersectStrings(candidateURLs, urls)
+			}
+		}
+	}
+
+	// Moderation filter (minimum level - includes requested level and above)
+	if query.Moderation != "" {
+		hasInitialFilter = true
+		levels := moderationLevelsAtOrAbove(query.Moderation)
+		var modURLs []string
+		for _, level := range levels {
+			urls, err := h.cache.GetRelaysByModeration(ctx, level)
+			if err == nil {
+				modURLs = unionStrings(modURLs, urls)
+			}
+		}
+		if len(candidateURLs) == 0 {
+			candidateURLs = modURLs
+		} else {
+			candidateURLs = intersectStrings(candidateURLs, modURLs)
+		}
+	}
+
+	// Language filter
+	if query.Language != "" {
+		hasInitialFilter = true
+		urls, err := h.cache.GetRelaysByLanguage(ctx, query.Language)
+		if err == nil {
+			if len(candidateURLs) == 0 {
+				candidateURLs = urls
+			} else {
+				candidateURLs = intersectStrings(candidateURLs, urls)
+			}
+		}
+	}
+
+	// Community filter
+	if query.Community != "" {
+		hasInitialFilter = true
+		urls, err := h.cache.GetRelaysByCommunity(ctx, query.Community)
+		if err == nil {
+			if len(candidateURLs) == 0 {
+				candidateURLs = urls
+			} else {
+				candidateURLs = intersectStrings(candidateURLs, urls)
+			}
+		}
+	}
+
+	// If no index filters, start with all relays
+	if !hasInitialFilter {
 		urls, err := h.cache.GetAllRelayURLs(ctx)
 		if err == nil {
 			candidateURLs = urls
@@ -359,7 +485,7 @@ func (h *Handler) handleFindRelays(ctx context.Context, query Query) ([]*nostr.E
 			continue
 		}
 
-		// Apply filters
+		// Apply post-fetch filters
 		if query.Health != "" && entry.Health != query.Health {
 			continue
 		}
@@ -375,24 +501,6 @@ func (h *Handler) handleFindRelays(ctx context.Context, query Query) ([]*nostr.E
 			}
 		}
 
-		// Check NIP support
-		if len(query.NIPs) > 1 {
-			supported := make(map[int]bool)
-			for _, nip := range entry.SupportedNIPs {
-				supported[nip] = true
-			}
-			allSupported := true
-			for _, nip := range query.NIPs {
-				if !supported[nip] {
-					allSupported = false
-					break
-				}
-			}
-			if !allSupported {
-				continue
-			}
-		}
-
 		// Create response event
 		event := h.createRelayResponse(entry)
 		responses = append(responses, event)
@@ -402,7 +510,58 @@ func (h *Handler) handleFindRelays(ctx context.Context, query Query) ([]*nostr.E
 	return responses, nil
 }
 
-// createRelayResponse creates a kind 30069 event from a relay entry.
+// intersectStrings returns the intersection of two string slices.
+func intersectStrings(a, b []string) []string {
+	m := make(map[string]bool)
+	for _, v := range a {
+		m[v] = true
+	}
+	var result []string
+	for _, v := range b {
+		if m[v] {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// unionStrings returns the union of two string slices (deduplicated).
+func unionStrings(a, b []string) []string {
+	m := make(map[string]bool)
+	for _, v := range a {
+		m[v] = true
+	}
+	for _, v := range b {
+		m[v] = true
+	}
+	result := make([]string, 0, len(m))
+	for v := range m {
+		result = append(result, v)
+	}
+	return result
+}
+
+// moderationLevelsAtOrAbove returns all moderation levels at or above the given level.
+// Ordering: unmoderated < light < active < strict
+func moderationLevelsAtOrAbove(level string) []string {
+	levels := []string{"unmoderated", "light", "active", "strict"}
+	var result []string
+	found := false
+	for _, l := range levels {
+		if l == level {
+			found = true
+		}
+		if found {
+			result = append(result, l)
+		}
+	}
+	if !found {
+		return []string{level}
+	}
+	return result
+}
+
+// createRelayResponse creates a kind 30072 event from a relay entry.
 func (h *Handler) createRelayResponse(entry *cache.RelayEntry) *nostr.Event {
 	tags := nostr.Tags{
 		{"d", entry.URL},
@@ -416,6 +575,16 @@ func (h *Handler) createRelayResponse(entry *cache.RelayEntry) *nostr.Event {
 	}
 	if entry.Description != "" {
 		tags = append(tags, nostr.Tag{"description", entry.Description})
+	}
+	if entry.Pubkey != "" {
+		tags = append(tags, nostr.Tag{"operator", entry.Pubkey})
+	}
+	if entry.Software != "" {
+		if entry.Version != "" {
+			tags = append(tags, nostr.Tag{"software", entry.Software, entry.Version})
+		} else {
+			tags = append(tags, nostr.Tag{"software", entry.Software})
+		}
 	}
 	if len(entry.SupportedNIPs) > 0 {
 		nipTag := nostr.Tag{"nips"}
@@ -435,9 +604,39 @@ func (h *Handler) createRelayResponse(entry *cache.RelayEntry) *nostr.Event {
 	} else {
 		tags = append(tags, nostr.Tag{"payment", "free"})
 	}
+	if entry.AuthRequired {
+		tags = append(tags, nostr.Tag{"admission", "auth"})
+	} else {
+		tags = append(tags, nostr.Tag{"admission", "open"})
+	}
+
+	// Community & segregation metadata
+	if entry.ContentPolicy != "" {
+		tags = append(tags, nostr.Tag{"content_policy", entry.ContentPolicy})
+	}
+	if entry.Moderation != "" {
+		tags = append(tags, nostr.Tag{"moderation", entry.Moderation})
+	}
+	if entry.ModerationPolicy != "" {
+		tags = append(tags, nostr.Tag{"moderation_policy", entry.ModerationPolicy})
+	}
+	if entry.Community != "" {
+		tags = append(tags, nostr.Tag{"community", entry.Community})
+	}
+	for _, lang := range entry.Languages {
+		tags = append(tags, nostr.Tag{"language", lang})
+	}
+
+	// Aggregated annotation data
+	for topic, count := range entry.Topics {
+		tags = append(tags, nostr.Tag{"topic", topic, strconv.Itoa(count)})
+	}
+	for atm, count := range entry.Atmosphere {
+		tags = append(tags, nostr.Tag{"atmosphere", atm, strconv.Itoa(count)})
+	}
 
 	event := &nostr.Event{
-		Kind:      30069,
+		Kind:      30072,
 		PubKey:    h.pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags:      tags,
@@ -499,7 +698,7 @@ func (h *Handler) createActivityResponse(activity *cache.Activity) *nostr.Event 
 	}
 
 	event := &nostr.Event{
-		Kind:      30067,
+		Kind:      30070,
 		PubKey:    h.pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags:      tags,

@@ -1,4 +1,4 @@
-// Package publisher handles publishing kind 30069 relay directory events to Nostr relays.
+// Package publisher handles publishing kind 30072 relay directory events to Nostr relays.
 // This enables passive federation with other discovery services.
 package publisher
 
@@ -19,7 +19,7 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 )
 
-// Publisher publishes kind 30069 relay directory events.
+// Publisher publishes kind 30072 relay directory events.
 type Publisher struct {
 	cfg    *config.Config
 	cache  *cache.Client
@@ -218,7 +218,7 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 	return published
 }
 
-// createEvent creates a kind 30069 event from a relay entry.
+// createEvent creates a kind 30072 event from a relay entry.
 func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
 	tags := nostr.Tags{
 		{"d", entry.URL},
@@ -268,12 +268,37 @@ func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
 		tags = append(tags, nostr.Tag{"admission", "open"})
 	}
 
+	// Community & segregation metadata
+	if entry.ContentPolicy != "" {
+		tags = append(tags, nostr.Tag{"content_policy", entry.ContentPolicy})
+	}
+	if entry.Moderation != "" {
+		tags = append(tags, nostr.Tag{"moderation", entry.Moderation})
+	}
+	if entry.ModerationPolicy != "" {
+		tags = append(tags, nostr.Tag{"moderation_policy", entry.ModerationPolicy})
+	}
+	if entry.Community != "" {
+		tags = append(tags, nostr.Tag{"community", entry.Community})
+	}
+	for _, lang := range entry.Languages {
+		tags = append(tags, nostr.Tag{"language", lang})
+	}
+
+	// Aggregated annotation data (topics and atmosphere with counts)
+	for topic, count := range entry.Topics {
+		tags = append(tags, nostr.Tag{"topic", topic, strconv.Itoa(count)})
+	}
+	for atm, count := range entry.Atmosphere {
+		tags = append(tags, nostr.Tag{"atmosphere", atm, strconv.Itoa(count)})
+	}
+
 	// Set expiration (next publish cycle + buffer)
 	expiresAt := time.Now().Add(time.Duration(p.cfg.PublishInterval*2) * time.Minute)
 	tags = append(tags, nostr.Tag{"expires", strconv.FormatInt(expiresAt.Unix(), 10)})
 
 	event := &nostr.Event{
-		Kind:      30069,
+		Kind:      30072,
 		PubKey:    p.pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags:      tags,

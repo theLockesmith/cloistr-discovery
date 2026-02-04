@@ -1,5 +1,5 @@
 // Package inventory handles relay inventory indexing.
-// Implements Kind 30066 (Relay Inventory) from NDP.
+// Implements Kind 30069 (Relay Inventory) from NDP.
 // Tracks which relays have content from which pubkeys.
 package inventory
 
@@ -37,7 +37,7 @@ func NewIndexer(cfg *config.Config, cache *cache.Client) *Indexer {
 func (i *Indexer) Start(ctx context.Context) {
 	slog.Info("inventory indexer started")
 
-	// TODO: Subscribe to discovery relays for Kind 30066 events
+	// TODO: Subscribe to discovery relays for Kind 30069 events
 	// For now, we'll process inventory events as they come in
 
 	<-ctx.Done()
@@ -45,10 +45,10 @@ func (i *Indexer) Start(ctx context.Context) {
 	slog.Info("inventory indexer stopped")
 }
 
-// ProcessInventory processes a Kind 30066 relay inventory event.
+// ProcessInventory processes a Kind 30069 relay inventory event.
 // The event contains a bloom filter of pubkeys the relay has content for.
 func (i *Indexer) ProcessInventory(ctx context.Context, event *nostr.Event) error {
-	if event.Kind != 30066 {
+	if event.Kind != 30069 {
 		return nil
 	}
 
@@ -121,9 +121,9 @@ func (i *Indexer) subscribeLoop(ctx context.Context, relayURL string) {
 			continue
 		}
 
-		// Subscribe to Kind 30066 events
+		// Subscribe to Kind 30069 events
 		sub, err := relay.Subscribe(ctx, []nostr.Filter{
-			{Kinds: []int{30066}},
+			{Kinds: []int{30069}},
 		})
 		if err != nil {
 			slog.Error("failed to subscribe", "url", relayURL, "error", err)

@@ -1,5 +1,5 @@
 // Package activity handles activity announcement tracking.
-// Implements Kind 30067 (Activity Announcement) from NDP.
+// Implements Kind 30070 (Activity Announcement) from NDP.
 // Tracks real-time user activities like streaming, online status, etc.
 package activity
 
@@ -56,9 +56,9 @@ func (t *Tracker) Start(ctx context.Context) {
 	slog.Info("activity tracker stopped")
 }
 
-// ProcessActivity processes a Kind 30067 activity announcement event.
+// ProcessActivity processes a Kind 30070 activity announcement event.
 func (t *Tracker) ProcessActivity(ctx context.Context, event *nostr.Event) error {
-	if event.Kind != 30067 {
+	if event.Kind != 30070 {
 		return nil
 	}
 
@@ -162,9 +162,9 @@ func (t *Tracker) subscribeLoop(ctx context.Context, relayURL string) {
 			continue
 		}
 
-		// Subscribe to Kind 30067 events
+		// Subscribe to Kind 30070 events
 		sub, err := relay.Subscribe(ctx, []nostr.Filter{
-			{Kinds: []int{30067}},
+			{Kinds: []int{30070}},
 		})
 		if err != nil {
 			slog.Error("failed to subscribe", "url", relayURL, "error", err)

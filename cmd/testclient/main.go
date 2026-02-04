@@ -103,9 +103,9 @@ func printHelp() {
 
 Commands:
   keygen              Generate a new keypair for testing
-  publish-inventory   Publish a kind 30066 relay inventory event
-  publish-activity    Publish a kind 30067 activity announcement
-  query               Publish a kind 30068 discovery query
+  publish-inventory   Publish a kind 30069 relay inventory event
+  publish-activity    Publish a kind 30070 activity announcement
+  query               Publish a kind 30071 discovery query
   query-http          Query the discovery service via HTTP API
   listen              Listen for NDP events on a relay
 
@@ -129,8 +129,7 @@ Examples:
   ./testclient -cmd listen -relay ws://localhost:17080
 
 Environment:
-  NOSTR_PRIVATE_KEY   Default private key (can be overridden with -sk)
-`)
+  NOSTR_PRIVATE_KEY   Default private key (can be overridden with -sk)`)
 }
 
 func generateKeypair() {
@@ -186,12 +185,12 @@ func parsePrivateKey(key string) string {
 func publishInventory(ctx context.Context, relayURL, sk, inventoryRelayURL string) {
 	pk, _ := nostr.GetPublicKey(sk)
 
-	fmt.Printf("Publishing kind 30066 (Relay Inventory) to %s\n", relayURL)
+	fmt.Printf("Publishing kind 30069 (Relay Inventory) to %s\n", relayURL)
 	fmt.Printf("Inventory for relay: %s\n", inventoryRelayURL)
 
 	// Create a test inventory event
 	event := &nostr.Event{
-		Kind:      30066,
+		Kind:      30069,
 		PubKey:    pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags: nostr.Tags{
@@ -230,11 +229,11 @@ func publishInventory(ctx context.Context, relayURL, sk, inventoryRelayURL strin
 func publishActivity(ctx context.Context, relayURL, sk, activityType string) {
 	pk, _ := nostr.GetPublicKey(sk)
 
-	fmt.Printf("Publishing kind 30067 (Activity Announcement) to %s\n", relayURL)
+	fmt.Printf("Publishing kind 30070 (Activity Announcement) to %s\n", relayURL)
 	fmt.Printf("Activity type: %s\n", activityType)
 
 	event := &nostr.Event{
-		Kind:      30067,
+		Kind:      30070,
 		PubKey:    pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags: nostr.Tags{
@@ -276,7 +275,7 @@ func publishActivity(ctx context.Context, relayURL, sk, activityType string) {
 func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, health, nips, responseRelayURL string) {
 	pk, _ := nostr.GetPublicKey(sk)
 
-	fmt.Printf("Publishing kind 30068 (Discovery Query) to %s\n", relayURL)
+	fmt.Printf("Publishing kind 30071 (Discovery Query) to %s\n", relayURL)
 	fmt.Printf("Query type: %s\n", queryType)
 
 	tags := nostr.Tags{
@@ -300,7 +299,7 @@ func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, he
 	}
 
 	event := &nostr.Event{
-		Kind:      30068,
+		Kind:      30071,
 		PubKey:    pk,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Tags:      tags,
@@ -332,7 +331,7 @@ func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, he
 	since := nostr.Timestamp(time.Now().Add(-1 * time.Minute).Unix())
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{
-			Kinds: []int{30069, 30067}, // Relay directory entries and activities
+			Kinds: []int{30072, 30070}, // Relay directory entries and activities
 			Tags:  map[string][]string{"e": {event.ID}},
 			Since: &since,
 		},
@@ -438,8 +437,8 @@ func queryHTTP(ctx context.Context, apiURL, targetPubkey, health string) {
 
 func listenForEvents(ctx context.Context, relayURL string) {
 	fmt.Printf("Listening for NDP events on %s\n", relayURL)
-	fmt.Println("Event kinds: 30066 (Inventory), 30067 (Activity), 30068 (Query), 30069 (Directory)")
-	fmt.Println("Press Ctrl+C to stop\n")
+	fmt.Println("Event kinds: 30069 (Inventory), 30070 (Activity), 30071 (Query), 30072 (Directory), 30073 (Annotation)")
+	fmt.Println("Press Ctrl+C to stop")
 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
@@ -451,7 +450,7 @@ func listenForEvents(ctx context.Context, relayURL string) {
 	since := nostr.Timestamp(time.Now().Add(-5 * time.Minute).Unix())
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{
-			Kinds: []int{30066, 30067, 30068, 30069},
+			Kinds: []int{30069, 30070, 30071, 30072, 30073},
 			Since: &since,
 		},
 	})
@@ -486,14 +485,16 @@ func listenForEvents(ctx context.Context, relayURL string) {
 
 func getKindName(kind int) string {
 	switch kind {
-	case 30066:
-		return "Relay Inventory"
-	case 30067:
-		return "Activity Announcement"
-	case 30068:
-		return "Discovery Query"
 	case 30069:
+		return "Relay Inventory"
+	case 30070:
+		return "Activity Announcement"
+	case 30071:
+		return "Discovery Query"
+	case 30072:
 		return "Relay Directory Entry"
+	case 30073:
+		return "Relay Annotation"
 	default:
 		return "Unknown"
 	}

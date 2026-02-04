@@ -86,8 +86,14 @@ type RelaysResponse struct {
 // RelaysHandler handles GET /api/v1/relays
 // Query params:
 //   - health: filter by health status (online, degraded, offline)
-//   - nips: filter by supported NIPs (comma-separated)
+//   - nips: filter by supported NIPs (comma-separated, AND logic)
 //   - location: filter by country code
+//   - topic: filter by topic (OR logic if multiple)
+//   - atmosphere: filter by atmosphere (OR logic if multiple)
+//   - content_policy: filter by content policy (anything, sfw, nsfw-allowed, nsfw-only)
+//   - moderation: filter by minimum moderation level (unmoderated, light, active, strict)
+//   - language: filter by language (ISO 639-1 code)
+//   - community: filter by community name
 func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -102,7 +108,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	var relayURLs []string
 	hasFilters := false
 
-	// Filter by NIP if specified
+	// Filter by NIP if specified (AND logic - must support all)
 	if nipsParam := q.Get("nips"); nipsParam != "" {
 		hasFilters = true
 		nips := strings.Split(nipsParam, ",")
@@ -119,7 +125,6 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 			if len(relayURLs) == 0 {
 				relayURLs = urls
 			} else {
-				// Intersection
 				relayURLs = intersect(relayURLs, urls)
 			}
 		}
@@ -131,6 +136,109 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 		urls, err := s.cache.GetRelaysByLocation(ctx, loc)
 		if err != nil {
 			slog.Error("failed to get relays by location", "location", loc, "error", err)
+		} else {
+			if len(relayURLs) == 0 {
+				relayURLs = urls
+			} else {
+				relayURLs = intersect(relayURLs, urls)
+			}
+		}
+	}
+
+	// Filter by topic if specified (OR logic - match any)
+	if topics, ok := q["topic"]; ok && len(topics) > 0 {
+		hasFilters = true
+		var topicURLs []string
+		for _, topic := range topics {
+			urls, err := s.cache.GetRelaysByTopic(ctx, topic)
+			if err != nil {
+				slog.Error("failed to get relays by topic", "topic", topic, "error", err)
+				continue
+			}
+			topicURLs = union(topicURLs, urls)
+		}
+		if len(relayURLs) == 0 {
+			relayURLs = topicURLs
+		} else {
+			relayURLs = intersect(relayURLs, topicURLs)
+		}
+	}
+
+	// Filter by atmosphere if specified (OR logic - match any)
+	if atmospheres, ok := q["atmosphere"]; ok && len(atmospheres) > 0 {
+		hasFilters = true
+		var atmURLs []string
+		for _, atm := range atmospheres {
+			urls, err := s.cache.GetRelaysByAtmosphere(ctx, atm)
+			if err != nil {
+				slog.Error("failed to get relays by atmosphere", "atmosphere", atm, "error", err)
+				continue
+			}
+			atmURLs = union(atmURLs, urls)
+		}
+		if len(relayURLs) == 0 {
+			relayURLs = atmURLs
+		} else {
+			relayURLs = intersect(relayURLs, atmURLs)
+		}
+	}
+
+	// Filter by content policy if specified
+	if cp := q.Get("content_policy"); cp != "" {
+		hasFilters = true
+		urls, err := s.cache.GetRelaysByContentPolicy(ctx, cp)
+		if err != nil {
+			slog.Error("failed to get relays by content policy", "content_policy", cp, "error", err)
+		} else {
+			if len(relayURLs) == 0 {
+				relayURLs = urls
+			} else {
+				relayURLs = intersect(relayURLs, urls)
+			}
+		}
+	}
+
+	// Filter by moderation level if specified (minimum level matching)
+	if mod := q.Get("moderation"); mod != "" {
+		hasFilters = true
+		modLevels := moderationLevelsAtOrAbove(mod)
+		var modURLs []string
+		for _, level := range modLevels {
+			urls, err := s.cache.GetRelaysByModeration(ctx, level)
+			if err != nil {
+				slog.Error("failed to get relays by moderation", "moderation", level, "error", err)
+				continue
+			}
+			modURLs = union(modURLs, urls)
+		}
+		if len(relayURLs) == 0 {
+			relayURLs = modURLs
+		} else {
+			relayURLs = intersect(relayURLs, modURLs)
+		}
+	}
+
+	// Filter by language if specified
+	if lang := q.Get("language"); lang != "" {
+		hasFilters = true
+		urls, err := s.cache.GetRelaysByLanguage(ctx, lang)
+		if err != nil {
+			slog.Error("failed to get relays by language", "language", lang, "error", err)
+		} else {
+			if len(relayURLs) == 0 {
+				relayURLs = urls
+			} else {
+				relayURLs = intersect(relayURLs, urls)
+			}
+		}
+	}
+
+	// Filter by community if specified
+	if community := q.Get("community"); community != "" {
+		hasFilters = true
+		urls, err := s.cache.GetRelaysByCommunity(ctx, community)
+		if err != nil {
+			slog.Error("failed to get relays by community", "community", community, "error", err)
 		} else {
 			if len(relayURLs) == 0 {
 				relayURLs = urls
@@ -289,6 +397,42 @@ func intersect(a, b []string) []string {
 		if m[v] {
 			result = append(result, v)
 		}
+	}
+	return result
+}
+
+// union returns the union of two string slices (deduplicated).
+func union(a, b []string) []string {
+	m := make(map[string]bool)
+	for _, v := range a {
+		m[v] = true
+	}
+	for _, v := range b {
+		m[v] = true
+	}
+	result := make([]string, 0, len(m))
+	for v := range m {
+		result = append(result, v)
+	}
+	return result
+}
+
+// moderationLevelsAtOrAbove returns all moderation levels at or above the given level.
+// Ordering: unmoderated < light < active < strict
+func moderationLevelsAtOrAbove(level string) []string {
+	levels := []string{"unmoderated", "light", "active", "strict"}
+	var result []string
+	found := false
+	for _, l := range levels {
+		if l == level {
+			found = true
+		}
+		if found {
+			result = append(result, l)
+		}
+	}
+	if !found {
+		return []string{level}
 	}
 	return result
 }

@@ -39,30 +39,48 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // Key patterns for discovery data:
-// relay:{url}              -> Kind 30069 JSON (relay directory entry)
-// relay:health:{url}       -> "online"/"degraded"/"offline"
-// inventory:{relay}:{pk}   -> "1" (relay has pubkey's content)
-// pubkey:{pk}:relays       -> Set of relay URLs
-// activity:{pk}            -> Kind 30067 JSON
-// streams:active           -> Set of event IDs
-// relays:by:nip:{nip}      -> Set of relay URLs
-// relays:by:location:{cc}  -> Set of relay URLs
+// relay:{url}                       -> Kind 30072 JSON (relay directory entry)
+// relay:health:{url}                -> "online"/"degraded"/"offline"
+// inventory:{relay}:{pk}            -> "1" (relay has pubkey's content)
+// pubkey:{pk}:relays                -> Set of relay URLs
+// activity:{pk}                     -> Kind 30070 JSON
+// streams:active                    -> Set of event IDs
+// relays:by:nip:{nip}               -> Set of relay URLs
+// relays:by:location:{cc}           -> Set of relay URLs
+// relays:by:topic:{topic}           -> Set of relay URLs
+// relays:by:atmosphere:{atm}        -> Set of relay URLs
+// relays:by:moderation:{level}      -> Set of relay URLs
+// relays:by:content_policy:{policy} -> Set of relay URLs
+// relays:by:language:{lang}         -> Set of relay URLs
+// relays:by:community:{name}        -> Set of relay URLs
+// relay:topics:{url}                -> Map of topic -> count
+// relay:atmosphere:{url}            -> Map of atmosphere -> count
+// relay:annotations:{url}           -> List of annotation events
 
-// RelayEntry represents a cached relay directory entry (Kind 30069).
+// RelayEntry represents a cached relay directory entry (Kind 30072).
 type RelayEntry struct {
-	URL            string    `json:"url"`
-	Name           string    `json:"name"`
-	Description    string    `json:"description"`
-	Pubkey         string    `json:"pubkey"`
-	SupportedNIPs  []int     `json:"supported_nips"`
-	Software       string    `json:"software"`
-	Version        string    `json:"version"`
-	Health         string    `json:"health"` // online, degraded, offline
-	LatencyMs      int       `json:"latency_ms"`
-	LastChecked    time.Time `json:"last_checked"`
-	CountryCode    string    `json:"country_code,omitempty"`
+	URL             string    `json:"url"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	Pubkey          string    `json:"pubkey"`
+	SupportedNIPs   []int     `json:"supported_nips"`
+	Software        string    `json:"software"`
+	Version         string    `json:"version"`
+	Health          string    `json:"health"` // online, degraded, offline
+	LatencyMs       int       `json:"latency_ms"`
+	LastChecked     time.Time `json:"last_checked"`
+	CountryCode     string    `json:"country_code,omitempty"`
 	PaymentRequired bool      `json:"payment_required"`
-	AuthRequired   bool      `json:"auth_required"`
+	AuthRequired    bool      `json:"auth_required"`
+
+	// Community & segregation metadata
+	ContentPolicy    string            `json:"content_policy,omitempty"`    // anything, sfw, nsfw-allowed, nsfw-only
+	Moderation       string            `json:"moderation,omitempty"`        // unmoderated, light, active, strict
+	ModerationPolicy string            `json:"moderation_policy,omitempty"` // URL to relay rules
+	Community        string            `json:"community,omitempty"`         // freeform community name
+	Languages        []string          `json:"languages,omitempty"`         // ISO 639-1 codes
+	Topics           map[string]int    `json:"topics,omitempty"`            // topic -> annotation count
+	Atmosphere       map[string]int    `json:"atmosphere,omitempty"`        // atmosphere -> annotation count
 }
 
 // SetRelayEntry caches a relay directory entry.
@@ -97,6 +115,48 @@ func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.
 		c.rdb.Expire(ctx, locKey, ttl)
 	}
 
+	// Index by topics (from annotation aggregation)
+	for topic := range entry.Topics {
+		topicKey := "relays:by:topic:" + topic
+		c.rdb.SAdd(ctx, topicKey, entry.URL)
+		c.rdb.Expire(ctx, topicKey, ttl)
+	}
+
+	// Index by atmosphere (from annotation aggregation)
+	for atm := range entry.Atmosphere {
+		atmKey := "relays:by:atmosphere:" + atm
+		c.rdb.SAdd(ctx, atmKey, entry.URL)
+		c.rdb.Expire(ctx, atmKey, ttl)
+	}
+
+	// Index by moderation level
+	if entry.Moderation != "" {
+		modKey := "relays:by:moderation:" + entry.Moderation
+		c.rdb.SAdd(ctx, modKey, entry.URL)
+		c.rdb.Expire(ctx, modKey, ttl)
+	}
+
+	// Index by content policy
+	if entry.ContentPolicy != "" {
+		cpKey := "relays:by:content_policy:" + entry.ContentPolicy
+		c.rdb.SAdd(ctx, cpKey, entry.URL)
+		c.rdb.Expire(ctx, cpKey, ttl)
+	}
+
+	// Index by languages
+	for _, lang := range entry.Languages {
+		langKey := "relays:by:language:" + lang
+		c.rdb.SAdd(ctx, langKey, entry.URL)
+		c.rdb.Expire(ctx, langKey, ttl)
+	}
+
+	// Index by community name
+	if entry.Community != "" {
+		commKey := "relays:by:community:" + entry.Community
+		c.rdb.SAdd(ctx, commKey, entry.URL)
+		c.rdb.Expire(ctx, commKey, ttl)
+	}
+
 	return nil
 }
 
@@ -128,6 +188,42 @@ func (c *Client) GetRelaysByNIP(ctx context.Context, nip int) ([]string, error) 
 // GetRelaysByLocation returns all relays in a specific country.
 func (c *Client) GetRelaysByLocation(ctx context.Context, countryCode string) ([]string, error) {
 	key := "relays:by:location:" + countryCode
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByTopic returns all relays tagged with a specific topic.
+func (c *Client) GetRelaysByTopic(ctx context.Context, topic string) ([]string, error) {
+	key := "relays:by:topic:" + topic
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByAtmosphere returns all relays tagged with a specific atmosphere.
+func (c *Client) GetRelaysByAtmosphere(ctx context.Context, atmosphere string) ([]string, error) {
+	key := "relays:by:atmosphere:" + atmosphere
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByModeration returns all relays with a specific moderation level.
+func (c *Client) GetRelaysByModeration(ctx context.Context, level string) ([]string, error) {
+	key := "relays:by:moderation:" + level
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByContentPolicy returns all relays with a specific content policy.
+func (c *Client) GetRelaysByContentPolicy(ctx context.Context, policy string) ([]string, error) {
+	key := "relays:by:content_policy:" + policy
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByLanguage returns all relays supporting a specific language.
+func (c *Client) GetRelaysByLanguage(ctx context.Context, lang string) ([]string, error) {
+	key := "relays:by:language:" + lang
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByCommunity returns all relays in a specific community.
+func (c *Client) GetRelaysByCommunity(ctx context.Context, community string) ([]string, error) {
+	key := "relays:by:community:" + community
 	return c.rdb.SMembers(ctx, key).Result()
 }
 
