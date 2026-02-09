@@ -38,3 +38,7 @@ Thumbs.db
 # Coverage
 coverage.out
 coverage.html
+
+# Claude-mem context files (keep root CLAUDE.md)
+**/CLAUDE.md
+!CLAUDE.md
