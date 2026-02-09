@@ -30,28 +30,13 @@ type PublisherInfo struct {
 	PublicKey       string    `json:"public_key"`
 }
 
-// QueryHandlerInterface is an interface for getting query handler statistics.
-type QueryHandlerInterface interface {
-	GetPublicKey() string
-	GetLastQuery() time.Time
-	GetQueriesHandled() int64
-}
-
-// QueryHandlerInfo contains query handler statistics for the dashboard.
-type QueryHandlerInfo struct {
-	LastQuery      time.Time `json:"last_query"`
-	QueriesHandled int64     `json:"queries_handled"`
-	PublicKey      string    `json:"public_key"`
-}
-
 // Server handles admin API requests.
 type Server struct {
-	cfg          *config.Config
-	cache        *cache.Client
-	monitor      *relay.Monitor
-	coordinator  *discovery.Coordinator
-	publisher    PublisherInterface
-	queryHandler QueryHandlerInterface
+	cfg         *config.Config
+	cache       *cache.Client
+	monitor     *relay.Monitor
+	coordinator *discovery.Coordinator
+	publisher   PublisherInterface
 }
 
 // NewServer creates a new admin server.
@@ -67,11 +52,6 @@ func NewServer(cfg *config.Config, cache *cache.Client, monitor *relay.Monitor, 
 // SetPublisher sets the publisher for stats reporting.
 func (s *Server) SetPublisher(p PublisherInterface) {
 	s.publisher = p
-}
-
-// SetQueryHandler sets the query handler for stats reporting.
-func (s *Server) SetQueryHandler(q QueryHandlerInterface) {
-	s.queryHandler = q
 }
 
 // AuthMiddleware validates API key or basic auth credentials.
@@ -132,12 +112,10 @@ func (s *Server) Handler(w http.ResponseWriter, r *http.Request) {
 
 // DashboardResponse contains dashboard statistics.
 type DashboardResponse struct {
-	Relays       RelayStats        `json:"relays"`
-	Discovery    DiscoveryInfo     `json:"discovery"`
-	Lists        ListCounts        `json:"lists"`
-	Activity     ActivityStats     `json:"activity"`
-	Publisher    *PublisherInfo    `json:"publisher,omitempty"`
-	QueryHandler *QueryHandlerInfo `json:"query_handler,omitempty"`
+	Relays    RelayStats     `json:"relays"`
+	Discovery DiscoveryInfo  `json:"discovery"`
+	Lists     ListCounts     `json:"lists"`
+	Publisher *PublisherInfo `json:"publisher,omitempty"`
 }
 
 // RelayStats contains relay health statistics.
@@ -159,12 +137,6 @@ type ListCounts struct {
 	WhitelistCount    int `json:"whitelist_count"`
 	BlacklistCount    int `json:"blacklist_count"`
 	TrustedPeersCount int `json:"trusted_peers_count"`
-}
-
-// ActivityStats contains activity tracking statistics.
-type ActivityStats struct {
-	StreamsActive  int64 `json:"streams_active"`
-	PubkeysIndexed int64 `json:"pubkeys_indexed"`
 }
 
 // DashboardHandler returns dashboard statistics.
@@ -208,10 +180,6 @@ func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	blacklist, _ := s.cache.GetBlacklist(ctx)
 	peers, _ := s.cache.GetTrustedPeers(ctx)
 
-	// Get activity stats
-	streams, _ := s.cache.GetActiveStreams(ctx)
-	pubkeysIndexed, _ := s.cache.GetStat(ctx, "pubkeys:indexed")
-
 	resp := DashboardResponse{
 		Relays: relayStats,
 		Discovery: DiscoveryInfo{
@@ -223,10 +191,6 @@ func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 			BlacklistCount:    len(blacklist),
 			TrustedPeersCount: len(peers),
 		},
-		Activity: ActivityStats{
-			StreamsActive:  int64(len(streams)),
-			PubkeysIndexed: pubkeysIndexed,
-		},
 	}
 
 	// Add publisher stats if available
@@ -236,15 +200,6 @@ func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 			PublishCount:    s.publisher.GetPublishCount(),
 			RelaysPublished: s.publisher.GetRelaysPublished(),
 			PublicKey:       s.publisher.GetPublicKey(),
-		}
-	}
-
-	// Add query handler stats if available
-	if s.queryHandler != nil {
-		resp.QueryHandler = &QueryHandlerInfo{
-			LastQuery:      s.queryHandler.GetLastQuery(),
-			QueriesHandled: s.queryHandler.GetQueriesHandled(),
-			PublicKey:      s.queryHandler.GetPublicKey(),
 		}
 	}
 

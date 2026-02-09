@@ -1,5 +1,9 @@
 // Command testclient is a CLI tool for testing the NDP discovery service.
-// It can publish test events, send queries, and verify responses.
+//
+// NDP Status: The current NDP proposal focuses on Kind 30072 (Relay Directory Entry) only.
+// Other kinds (30069 inventory, 30070 activity, 30071 query, 30073 annotation) have been
+// deferred or dropped from the initial proposal. The commands for these kinds remain
+// for testing purposes but are not part of the current NDP specification.
 package main
 
 import (
@@ -101,31 +105,27 @@ func main() {
 func printHelp() {
 	fmt.Println(`NDP Test Client - Test the Nostr Discovery Protocol implementation
 
+NDP Status: The current proposal focuses on Kind 30072 (Relay Directory Entry) only.
+Other kinds have been deferred/dropped but commands remain for testing.
+
 Commands:
   keygen              Generate a new keypair for testing
-  publish-inventory   Publish a kind 30069 relay inventory event
-  publish-activity    Publish a kind 30070 activity announcement
-  query               Publish a kind 30071 discovery query
-  query-http          Query the discovery service via HTTP API
-  listen              Listen for NDP events on a relay
+  query-http          Query the discovery service via HTTP API (main testing method)
+  listen              Listen for Kind 30072 events on a relay
+
+Legacy/Deferred Commands (not part of current NDP proposal):
+  publish-inventory   Publish a kind 30069 relay inventory event (DEFERRED)
+  publish-activity    Publish a kind 30070 activity announcement (DEFERRED)
+  query               Publish a kind 30071 discovery query (DROPPED)
 
 Examples:
   # Generate a test keypair
   ./testclient -cmd keygen
 
-  # Publish a test inventory event
-  ./testclient -cmd publish-inventory -sk <privkey> -relay ws://localhost:17080 -inventory-relay wss://test.relay
-
-  # Publish an activity announcement
-  ./testclient -cmd publish-activity -sk <privkey> -relay ws://localhost:17080 -activity streaming
-
-  # Send a discovery query
-  ./testclient -cmd query -sk <privkey> -relay ws://localhost:17080 -query-type find_relays -health online
-
-  # Query via HTTP API
+  # Query via HTTP API (recommended for testing)
   ./testclient -cmd query-http -api http://localhost:18080
 
-  # Listen for NDP events
+  # Listen for Kind 30072 relay directory events
   ./testclient -cmd listen -relay ws://localhost:17080
 
 Environment:
@@ -369,14 +369,15 @@ func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, he
 func queryHTTP(ctx context.Context, apiURL, targetPubkey, health string) {
 	fmt.Printf("Querying discovery service at %s\n", apiURL)
 
-	// Test different endpoints
+	// Test endpoints
 	endpoints := []string{
 		"/health",
 		"/api/v1/relays",
 	}
 
+	// Note: /api/v1/pubkey endpoint has been removed (Kind 30069 deferred)
 	if targetPubkey != "" {
-		endpoints = append(endpoints, fmt.Sprintf("/api/v1/pubkey/%s/relays", targetPubkey))
+		fmt.Printf("Note: pubkey lookup endpoint removed (Kind 30069 inventory deferred)\n")
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -437,7 +438,8 @@ func queryHTTP(ctx context.Context, apiURL, targetPubkey, health string) {
 
 func listenForEvents(ctx context.Context, relayURL string) {
 	fmt.Printf("Listening for NDP events on %s\n", relayURL)
-	fmt.Println("Event kinds: 30069 (Inventory), 30070 (Activity), 30071 (Query), 30072 (Directory), 30073 (Annotation)")
+	fmt.Println("Primary: Kind 30072 (Relay Directory Entry)")
+	fmt.Println("Also listening for deferred kinds: 30069, 30070, 30071, 30073")
 	fmt.Println("Press Ctrl+C to stop")
 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
@@ -448,9 +450,15 @@ func listenForEvents(ctx context.Context, relayURL string) {
 	defer relay.Close()
 
 	since := nostr.Timestamp(time.Now().Add(-5 * time.Minute).Unix())
+	// Listen for all NDP kinds for testing compatibility
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{
-			Kinds: []int{30069, 30070, 30071, 30072, 30073},
+			Kinds: []int{30072}, // Primary: Relay Directory Entry
+			Since: &since,
+		},
+		{
+			// Deferred/dropped kinds - still listen for testing
+			Kinds: []int{30069, 30070, 30071, 30073},
 			Since: &since,
 		},
 	})

@@ -1,10 +1,9 @@
 // Package main is the entry point for coldforge-discovery.
 // Coldforge Discovery implements the Nostr Discovery Protocol (NDP):
-// - Relay Inventory (Kind 30069): Index which relays have which pubkeys
-// - Activity Announcement (Kind 30070): Track real-time user activities
-// - Discovery Query (Kind 30071): Handle relay discovery queries
 // - Relay Directory Entry (Kind 30072): Publish verified relay information
-// - Relay Annotation (Kind 30073): Aggregate community topic/atmosphere data
+//
+// Discovery gathers relay data through NIP-11 metadata fetches and health checks.
+// This is the fallback mechanism when other relays don't publish Kind 30072 events.
 package main
 
 import (
@@ -17,16 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/activity"
 	"gitlab.com/coldforge/coldforge-discovery/internal/admin"
-	"gitlab.com/coldforge/coldforge-discovery/internal/annotation"
 	"gitlab.com/coldforge/coldforge-discovery/internal/api"
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 	"gitlab.com/coldforge/coldforge-discovery/internal/discovery"
-	"gitlab.com/coldforge/coldforge-discovery/internal/inventory"
 	"gitlab.com/coldforge/coldforge-discovery/internal/publisher"
-	"gitlab.com/coldforge/coldforge-discovery/internal/query"
 	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
 
@@ -86,8 +81,6 @@ func main() {
 	})
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
-	mux.HandleFunc("/api/v1/pubkey/", apiServer.PubkeyHandler)
-	mux.HandleFunc("/api/v1/activity/", apiServer.ActivityHandler)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
@@ -123,50 +116,6 @@ func main() {
 		discoveryCoordinator.Start(bgCtx)
 	}()
 
-	// Start inventory indexing goroutine
-	inventoryIndexer := inventory.NewIndexer(cfg, cacheClient)
-	go func() {
-		slog.Info("starting inventory indexer")
-		// Subscribe to seed relays for inventory events
-		for _, relayURL := range cfg.SeedRelays {
-			if err := inventoryIndexer.SubscribeToRelay(bgCtx, relayURL); err != nil {
-				slog.Error("failed to subscribe to relay for inventory", "url", relayURL, "error", err)
-			}
-		}
-		inventoryIndexer.Start(bgCtx)
-	}()
-
-	// Start activity tracking goroutine
-	activityTracker := activity.NewTracker(cfg, cacheClient)
-	go func() {
-		slog.Info("starting activity tracker")
-		// Subscribe to seed relays for activity events
-		for _, relayURL := range cfg.SeedRelays {
-			if err := activityTracker.SubscribeToRelay(bgCtx, relayURL); err != nil {
-				slog.Error("failed to subscribe to relay for activity", "url", relayURL, "error", err)
-			}
-		}
-		activityTracker.Start(bgCtx)
-	}()
-
-	// Start annotation aggregator goroutine (Kind 30073)
-	annotationAgg, err := annotation.NewAggregator(cfg, cfg.CacheURL)
-	if err != nil {
-		slog.Error("failed to initialize annotation aggregator", "error", err)
-	} else {
-		go func() {
-			slog.Info("starting annotation aggregator")
-			// Subscribe to seed relays for annotation events
-			for _, relayURL := range cfg.SeedRelays {
-				if err := annotationAgg.SubscribeToRelay(bgCtx, relayURL); err != nil {
-					slog.Error("failed to subscribe to relay for annotations", "url", relayURL, "error", err)
-				}
-			}
-			annotationAgg.Start(bgCtx)
-		}()
-		defer annotationAgg.Close()
-	}
-
 	// Start publisher goroutine (if enabled)
 	var eventPublisher *publisher.Publisher
 	if cfg.PublishEnabled {
@@ -182,29 +131,11 @@ func main() {
 		}
 	}
 
-	// Start query handler goroutine (requires private key)
-	var queryHandler *query.Handler
-	if cfg.PrivateKey != "" {
-		var err error
-		queryHandler, err = query.New(cfg, cacheClient)
-		if err != nil {
-			slog.Error("failed to initialize query handler", "error", err)
-		} else {
-			go func() {
-				slog.Info("starting query handler")
-				queryHandler.Start(bgCtx)
-			}()
-		}
-	}
-
 	// Initialize admin interface (if enabled)
 	if cfg.AdminEnabled {
 		adminServer := admin.NewServer(cfg, cacheClient, relayMonitor, discoveryCoordinator)
 		if eventPublisher != nil {
 			adminServer.SetPublisher(eventPublisher)
-		}
-		if queryHandler != nil {
-			adminServer.SetQueryHandler(queryHandler)
 		}
 		mux.HandleFunc("/admin/", adminServer.AuthMiddleware(adminServer.Handler))
 		slog.Info("admin interface enabled", "path", "/admin/")

@@ -1,13 +1,16 @@
 # CLAUDE.md - coldforge-discovery
 
-**Nostr Discovery Protocol (NDP) implementation - relay discovery, content routing, and activity tracking**
+**Nostr Discovery Protocol (NDP) implementation - Kind 30072 Relay Directory Entry**
 
-**Status:** Live - Publishing to cloistr, full NDP protocol implemented, ready for production deployment
+**NDP Focus:** Kind 30072 only (Relay Directory Entry). Other kinds have been deferred/dropped.
+
+**Status:** Deployed - Live on Atlantis at `https://discovery.coldforge.xyz`
 
 ## Documentation
 
 Full documentation: `~/claude/coldforge/services/discovery/CLAUDE.md`
-NIP Draft: `~/claude/coldforge/research/nip-draft-discovery-protocol.md`
+NIP Draft (minimal): `~/claude/coldforge/research/nip-draft-ndp-minimal.md`
+NIP Draft (full): `~/claude/coldforge/research/nip-draft-discovery-protocol.md`
 Architecture: `~/claude/coldforge/research/architecture-discovery-cache-relay.md`
 Coldforge overview: `~/claude/coldforge/CLAUDE.md`
 
@@ -77,12 +80,9 @@ coldforge-discovery/
 │   ├── api/                # HTTP API handlers (+ tests)
 │   ├── cache/              # Dragonfly/Redis caching (+ tests)
 │   ├── config/             # Configuration loading
-│   ├── relay/              # Relay monitoring via NIP-11
-│   ├── inventory/          # Content routing index (Kind 30066)
-│   ├── activity/           # Activity tracking (Kind 30067)
+│   ├── relay/              # Relay monitoring via NIP-11 (fallback data source)
 │   ├── discovery/          # Relay discovery sources (NIP-65, NIP-66, hosted lists, peers)
-│   ├── publisher/          # Publishes Kind 30069 events to Nostr relays
-│   ├── query/              # Handles Kind 30068 discovery queries
+│   ├── publisher/          # Publishes Kind 30072 events to Nostr relays
 │   └── admin/              # Admin dashboard + auth middleware
 ├── configs/                # Configuration templates (relay config)
 ├── Dockerfile              # Multi-stage build
@@ -101,9 +101,7 @@ Environment variables:
 | `SEED_RELAYS` | damus,nos.lol,nostr.band | Comma-separated relay URLs |
 | `RELAY_CHECK_INTERVAL` | 300 | Seconds between health checks |
 | `NIP11_TIMEOUT` | 10 | NIP-11 fetch timeout seconds |
-| `INVENTORY_TTL` | 12 | Hours before inventory expires |
-| `ACTIVITY_TTL` | 15 | Minutes before activity expires |
-| `PUBLISH_ENABLED` | false | Enable publishing Kind 30069 events |
+| `PUBLISH_ENABLED` | false | Enable publishing Kind 30072 events |
 | `PUBLISH_RELAYS` | relay.cloistr.xyz | Comma-separated relays to publish to |
 | `PUBLISH_INTERVAL` | 10 | Minutes between publish cycles |
 | `NOSTR_PRIVATE_KEY` | - | Hex or nsec key for signing events |
@@ -120,9 +118,7 @@ Environment variables:
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /metrics` | Prometheus metrics |
-| `GET /api/v1/relays` | List relays (filter by health, nips, location) |
-| `GET /api/v1/pubkey/{pk}/relays` | Find relays with pubkey's content |
-| `GET /api/v1/activity/streams` | List active streams |
+| `GET /api/v1/relays` | List relays (filter by health, nips, location, moderation, etc.) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
 | `POST /admin/relays/submit` | Submit relay for discovery |
 | `POST /admin/relays/whitelist` | Manage relay whitelist |
@@ -130,48 +126,54 @@ Environment variables:
 
 ## NDP Event Kinds
 
-| Kind | Name | Subscribe | Publish | Purpose |
-|------|------|-----------|---------|---------|
-| 30066 | Relay Inventory | Yes | - | Which pubkeys a relay has |
-| 30067 | Activity Announcement | Yes | Yes (responses) | Real-time user activity |
-| 30068 | Discovery Query | Yes | Yes (responses) | Request/response discovery |
-| 30069 | Relay Directory Entry | - | Yes | Verified relay info + health |
+**Current Proposal: Kind 30072 only.** Other kinds deferred/dropped from initial proposal.
+
+| Kind | Name | Status | Purpose |
+|------|------|--------|---------|
+| 30072 | Relay Directory Entry | **ACTIVE** | Verified relay info + health (published) |
+| 30069 | Relay Inventory | DEFERRED | Which pubkeys a relay has |
+| 30070 | Activity Announcement | DEFERRED | Real-time user activity |
+| 30071 | Discovery Query | DROPPED | Request/response discovery |
+| 30073 | Relay Annotation | DROPPED | Community-curated topics/atmosphere |
 
 ## Completed
 
-- [x] Wire up relay/inventory/activity goroutines to main.go
-- [x] Add go.sum via `go mod tidy`
-- [x] Write unit tests for cache layer (12 tests)
-- [x] Write unit tests for API handlers (11 tests)
-- [x] Test locally with Docker Compose
-- [x] Fix critical issues from code review (event loop breaks, context management)
-- [x] Configure Atlas role for Kubernetes deployment
+- [x] Core relay monitoring with NIP-11 fetches and health checks
+- [x] Kind 30072 event publishing (publisher with per-relay connections)
+- [x] NIP-42 auth for publishing to authenticated relays (tested with cloistr)
 - [x] Discovery sources: NIP-65 crawling, NIP-66 consumption, peer discovery, hosted lists
 - [x] Admin interface with auth middleware and dashboard
-- [x] Kind 30069 event publishing (publisher with per-relay connections)
-- [x] Kind 30068 discovery query handler (request/response pattern)
-- [x] NIP-42 auth for publishing to authenticated relays (tested with cloistr)
-- [x] Test client CLI (`cmd/testclient`) with keygen, publish, query, listen commands
-- [x] Local test environment (nostr-rs-relay + dragonfly in Docker Compose)
-- [x] Integration testing against wss://relay.cloistr.xyz (NIP-42 auth working)
-- [x] NIP draft updated with federation section
+- [x] Unit tests for cache layer (12 tests) and API handlers (7 tests)
+- [x] Docker Compose local development environment
+- [x] Deploy to Atlantis (Atlas role, Harbor image, Cloudflare Tunnel, Dragonfly auth, NetworkPolicy)
+- [x] Production verified: 900+ relays tracked, 400+ online, publishing to 2 relays
+- [x] **NDP stripped to Kind 30072 only** - removed inventory, activity, query, annotation packages
+- [x] Updated API: removed `/api/v1/pubkey/` and `/api/v1/activity/` endpoints
+- [x] Relay monitor is now the primary data source (NIP-11 metadata + health checks)
 
-## Known Issues
+## Production Deployment
 
-- **Relay discovery dedup persists across restarts**: `discovery:seen` set in Dragonfly has no TTL. After container restart, NIP-65 discovered relays are treated as "already seen" and don't get forwarded to the relay monitor. Fix: load seen relays into monitor on startup.
-- **`/api/v1/relays` returns empty without filters**: The handler requires `nips` or `location` query params to populate the relay list. Missing fallback to `GetAllRelayURLs()`.
+- **URL:** `https://discovery.coldforge.xyz`
+- **Cluster:** Atlantis (OpenShift)
+- **Namespace:** `coldforge-discovery`
+- **Image:** `oci.coldforge.xyz/coldforge/coldforge-discovery:latest` (Harbor)
+- **Cache:** Dragonfly cluster at `dragonfly.dragonfly.svc.cluster.local:6379` (authenticated)
+- **Tunnel:** Cloudflare Tunnel via `cloistr-tunnel` role
+- **Atlas role:** `~/Atlas/roles/kube/coldforge-discovery/`
+- **Secrets:** Ansible Vault (`vars/vault.yml`) - NOSTR_PRIVATE_KEY, ADMIN_API_KEY, dragonfly_password
+- **Public key:** `532aceee51a63b3a7a242aca4e0b79f57352046b8743d0ea1833d135d2034ce6`
+
+Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
-1. **Fix relay discovery feedback loop** - Load seen relays into monitor on startup, add TTL to seen set
-2. **Fix `/api/v1/relays` endpoint** - Return all relays when no filters specified
-3. **Deploy to Atlantis** - Atlas role is ready, run `atlas kube apply`
-4. **Monitoring and health check strategy** - Evaluate options (Prometheus/Grafana vs alternatives)
-5. Implement exponential backoff for relay reconnections
-6. Add health check verification for background goroutines
-7. Add TTL expiration tests
-8. Expand test coverage (10 packages have no tests)
-9. Consider HorizontalPodAutoscaler for automatic scaling
+1. **Monitoring and health check strategy** - Evaluate Prometheus/Grafana vs alternatives
+2. Implement exponential backoff for relay reconnections
+3. Add health check verification for background goroutines
+4. Add TTL expiration tests
+5. Expand test coverage (10 packages have no tests)
+6. Consider HorizontalPodAutoscaler for automatic scaling
+7. Update CI/CD pipeline to push to Harbor instead of GitLab registry
 
 ## See Also
 
