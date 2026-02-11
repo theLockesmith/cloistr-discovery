@@ -4,8 +4,11 @@ stages:
   - deploy
 
 variables:
-  DOCKER_IMAGE: registry.coldforge.xyz/coldforge/coldforge-discovery
+  DOCKER_IMAGE: oci.coldforge.xyz/coldforge/coldforge-discovery
   GO_VERSION: "1.24"
+  # Harbor registry credentials (set in GitLab CI/CD settings)
+  HARBOR_REGISTRY: oci.coldforge.xyz
+  HARBOR_USER: "robot$atlas"
 
 # Cache Go modules between jobs
 .go-cache: &go-cache
@@ -25,7 +28,7 @@ test:
     - apk add --no-cache git
   script:
     - go mod download
-    - go test -v -race -coverprofile=coverage.out ./...
+    - go test -v -coverprofile=coverage.out ./...
     - go tool cover -func=coverage.out
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
   artifacts:
@@ -44,7 +47,7 @@ lint:
     - golangci-lint run --timeout 5m
   allow_failure: true
 
-# Build stage
+# Build stage - push to Harbor registry
 build:
   stage: build
   image: docker:latest
@@ -53,7 +56,7 @@ build:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker login -u ${HARBOR_USER} -p ${HARBOR_PASSWORD} ${HARBOR_REGISTRY}
   script:
     - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_SHA} .
     - docker tag ${DOCKER_IMAGE}:${CI_COMMIT_SHA} ${DOCKER_IMAGE}:latest
@@ -71,13 +74,29 @@ build-branch:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker login -u ${HARBOR_USER} -p ${HARBOR_PASSWORD} ${HARBOR_REGISTRY}
   script:
     - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG} .
     - docker push ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG}
   except:
     - main
     - tags
+
+# Tagged releases (semver only)
+build:release:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u ${HARBOR_USER} -p ${HARBOR_PASSWORD} ${HARBOR_REGISTRY}
+  script:
+    - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_TAG} .
+    - docker push ${DOCKER_IMAGE}:${CI_COMMIT_TAG}
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
 # Deploy stage - triggers Kubernetes deployment
 deploy:
@@ -88,8 +107,8 @@ deploy:
   before_script:
     - echo "${KUBE_CONFIG}" | base64 -d > ${KUBECONFIG}
   script:
-    - kubectl set image deployment/coldforge-discovery discovery=${DOCKER_IMAGE}:${CI_COMMIT_SHA} -n coldforge
-    - kubectl rollout status deployment/coldforge-discovery -n coldforge --timeout=300s
+    - kubectl set image deployment/coldforge-discovery discovery=${DOCKER_IMAGE}:${CI_COMMIT_SHA} -n coldforge-discovery
+    - kubectl rollout status deployment/coldforge-discovery -n coldforge-discovery --timeout=300s
   only:
     - main
   when: manual
