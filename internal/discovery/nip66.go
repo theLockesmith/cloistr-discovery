@@ -8,14 +8,16 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
+	"gitlab.com/coldforge/coldforge-discovery/internal/backoff"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
 
 // NIP66Consumer discovers relays by consuming NIP-66 relay monitor events (kind 30166).
 type NIP66Consumer struct {
-	cfg    *config.Config
-	output chan<- DiscoveredRelay
+	cfg     *config.Config
+	output  chan<- DiscoveredRelay
+	backoff *backoff.Tracker
 
 	mu          sync.RWMutex
 	lastConsume time.Time
@@ -24,8 +26,9 @@ type NIP66Consumer struct {
 // NewNIP66Consumer creates a new NIP-66 consumer.
 func NewNIP66Consumer(cfg *config.Config, output chan<- DiscoveredRelay) *NIP66Consumer {
 	return &NIP66Consumer{
-		cfg:    cfg,
-		output: output,
+		cfg:     cfg,
+		output:  output,
+		backoff: backoff.DefaultTracker(),
 	}
 }
 
@@ -44,6 +47,8 @@ func (n *NIP66Consumer) Start(ctx context.Context) {
 
 // subscribeToRelay subscribes to a relay for NIP-66 events.
 func (n *NIP66Consumer) subscribeToRelay(ctx context.Context, relayURL string) {
+	b := n.backoff.Get(relayURL)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -51,23 +56,32 @@ func (n *NIP66Consumer) subscribeToRelay(ctx context.Context, relayURL string) {
 		default:
 		}
 
-		n.consumeFromRelay(ctx, relayURL)
+		connected := n.consumeFromRelay(ctx, relayURL)
 
-		// Wait before reconnecting
+		if connected {
+			// Reset backoff on successful connection
+			b.Reset()
+		}
+
+		// Wait with exponential backoff before reconnecting
+		wait := b.Next()
+		slog.Debug("waiting before reconnecting", "relay", relayURL, "wait", wait)
+
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(30 * time.Second):
+		case <-time.After(wait):
 		}
 	}
 }
 
 // consumeFromRelay connects to a relay and consumes NIP-66 events.
-func (n *NIP66Consumer) consumeFromRelay(ctx context.Context, relayURL string) {
+// Returns true if connection was successful (even if it later disconnected).
+func (n *NIP66Consumer) consumeFromRelay(ctx context.Context, relayURL string) bool {
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
 		slog.Debug("failed to connect for NIP-66", "url", relayURL, "error", err)
-		return
+		return false
 	}
 	defer relay.Close()
 
@@ -80,20 +94,20 @@ func (n *NIP66Consumer) consumeFromRelay(ctx context.Context, relayURL string) {
 	})
 	if err != nil {
 		slog.Debug("failed to subscribe for NIP-66", "url", relayURL, "error", err)
-		return
+		return false
 	}
 	defer sub.Unsub()
 
 	metrics.NIP66ConnectionsActive.Inc()
 	defer metrics.NIP66ConnectionsActive.Dec()
 
-	slog.Debug("subscribed for NIP-66 events", "relay", relayURL)
+	slog.Info("subscribed for NIP-66 events", "relay", relayURL)
 
 eventLoop:
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return true
 		case event, ok := <-sub.Events:
 			if !ok {
 				break eventLoop
@@ -101,6 +115,8 @@ eventLoop:
 			n.processNIP66Event(ctx, event)
 		}
 	}
+
+	return true
 }
 
 // processNIP66Event extracts relay URLs from a NIP-66 event.

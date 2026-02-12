@@ -153,6 +153,7 @@ Environment variables:
 - [x] Prometheus/Grafana deployed in cluster (monitoring infrastructure ready)
 - [x] Service operational metrics (publisher, NIP-65, NIP-66, cache, health checks)
 - [x] Relay network aggregate metrics (by NIP, country, content policy, moderation, software, latency)
+- [x] Exponential backoff for NIP-66 relay reconnections
 
 ## Production Deployment
 
@@ -170,11 +171,10 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
-1. Implement exponential backoff for relay reconnections
-2. Add health check verification for background goroutines
-3. Add TTL expiration tests
-4. Expand test coverage (10 packages have no tests)
-5. Consider HorizontalPodAutoscaler for automatic scaling
+1. Add health check verification for background goroutines
+2. Add TTL expiration tests
+3. Expand test coverage (10 packages have no tests)
+4. Consider HorizontalPodAutoscaler for automatic scaling
 
 ## See Also
 
