@@ -150,6 +150,7 @@ Environment variables:
 - [x] **NDP stripped to Kind 30072 only** - removed inventory, activity, query, annotation packages
 - [x] Updated API: removed `/api/v1/pubkey/` and `/api/v1/activity/` endpoints
 - [x] Relay monitor is now the primary data source (NIP-11 metadata + health checks)
+- [x] Prometheus/Grafana deployed in cluster (monitoring infrastructure ready)
 
 ## Production Deployment
 
@@ -167,13 +168,13 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
-1. **Monitoring and health check strategy** - Evaluate Prometheus/Grafana vs alternatives
-2. Implement exponential backoff for relay reconnections
-3. Add health check verification for background goroutines
-4. Add TTL expiration tests
-5. Expand test coverage (10 packages have no tests)
-6. Consider HorizontalPodAutoscaler for automatic scaling
-7. Update CI/CD pipeline to push to Harbor instead of GitLab registry
+1. **Add service operational metrics** - publish success/failure, NIP-65 crawl stats, NIP-66 events consumed, cache operations, health check duration/success rate
+2. **Add relay network aggregate metrics** - relays by NIP support, by country, by content policy, by health status, average response latency, NIP-11 fetch success rate
+3. Implement exponential backoff for relay reconnections
+4. Add health check verification for background goroutines
+5. Add TTL expiration tests
+6. Expand test coverage (10 packages have no tests)
+7. Consider HorizontalPodAutoscaler for automatic scaling
 
 ## See Also
 
