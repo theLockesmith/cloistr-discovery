@@ -160,7 +160,7 @@ Environment variables:
 - **URL:** `https://discovery.cloistr.xyz`
 - **Cluster:** Atlantis (OpenShift)
 - **Namespace:** `coldforge-discovery`
-- **Image:** `registry.coldforge.xyz/coldforge/coldforge-discovery:latest` (GitLab Registry)
+- **Image:** Built and pushed by CI/CD pipeline
 - **Cache:** Dragonfly cluster at `dragonfly.dragonfly.svc.cluster.local:6379` (authenticated)
 - **Tunnel:** Cloudflare Tunnel via `cloistr-tunnel` role
 - **Atlas role:** `~/Atlas/roles/kube/coldforge-discovery/`
