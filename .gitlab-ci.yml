@@ -1,19 +1,16 @@
 stages:
   - test
   - build
-  - deploy
 
 variables:
   GO_VERSION: "1.24"
 
-# Cache Go modules between jobs
 .go-cache: &go-cache
   cache:
     key: ${CI_COMMIT_REF_SLUG}-go
     paths:
       - .go/pkg/mod/
 
-# Test stage
 test:
   stage: test
   image: golang:${GO_VERSION}-alpine
@@ -27,85 +24,19 @@ test:
     - go test -v -coverprofile=coverage.out ./...
     - go tool cover -func=coverage.out
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
-  artifacts:
-    reports:
-      coverage_report:
-        coverage_format: cobertura
-        path: coverage.out
 
 lint:
   stage: test
   image: golangci/golangci-lint:latest
   <<: *go-cache
-  variables:
-    GOPATH: ${CI_PROJECT_DIR}/.go
   script:
     - golangci-lint run --timeout 5m
   allow_failure: true
 
-# Build stage
 build:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-      - scheduler_failure
   script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context "${CI_PROJECT_DIR}"
-      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-      --destination "${CI_REGISTRY_IMAGE}:latest"
-  only:
-    - main
-  tags:
-    - kubernetes
-
-# Tagged releases (semver only)
-build:release:
-  stage: build
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-      - scheduler_failure
-  script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context "${CI_PROJECT_DIR}"
-      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-  tags:
-    - kubernetes
-
-# Deploy stage - triggers Kubernetes deployment
-deploy:
-  stage: deploy
-  image: bitnami/kubectl:latest
-  variables:
-    KUBECONFIG: /tmp/kubeconfig
-  before_script:
-    - echo "${KUBE_CONFIG}" | base64 -d > ${KUBECONFIG}
-  script:
-    - kubectl set image deployment/coldforge-discovery discovery=${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -n coldforge-discovery
-    - kubectl rollout status deployment/coldforge-discovery -n coldforge-discovery --timeout=300s
-  only:
-    - main
-  when: manual
-  environment:
-    name: production
-    url: https://discovery.cloistr.xyz
+    - /kaniko/executor --context ${CI_PROJECT_DIR} --dockerfile ${CI_PROJECT_DIR}/Dockerfile --no-push
