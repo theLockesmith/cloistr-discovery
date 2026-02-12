@@ -4,11 +4,8 @@ stages:
   - deploy
 
 variables:
-  DOCKER_IMAGE: oci.coldforge.xyz/coldforge/coldforge-discovery
+  DOCKER_IMAGE: ${CI_REGISTRY_IMAGE}
   GO_VERSION: "1.24"
-  # Harbor registry credentials (set in GitLab CI/CD settings)
-  HARBOR_REGISTRY: oci.coldforge.xyz
-  HARBOR_USER: "robot$atlas"
 
 # Cache Go modules between jobs
 .go-cache: &go-cache
@@ -47,7 +44,7 @@ lint:
     - golangci-lint run --timeout 5m
   allow_failure: true
 
-# Build stage - push to Harbor registry
+# Build stage
 build:
   stage: build
   image: docker:latest
@@ -56,8 +53,7 @@ build:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - echo "Logging into Harbor registry at ${HARBOR_REGISTRY}"
-    - echo "${HARBOR_PASSWORD}" | docker login -u "${HARBOR_USER}" --password-stdin "${HARBOR_REGISTRY}"
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
   script:
     - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_SHA} .
     - docker tag ${DOCKER_IMAGE}:${CI_COMMIT_SHA} ${DOCKER_IMAGE}:latest
@@ -75,7 +71,7 @@ build-branch:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - echo "${HARBOR_PASSWORD}" | docker login -u "${HARBOR_USER}" --password-stdin "${HARBOR_REGISTRY}"
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
   script:
     - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG} .
     - docker push ${DOCKER_IMAGE}:${CI_COMMIT_REF_SLUG}
@@ -92,7 +88,7 @@ build:release:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - echo "${HARBOR_PASSWORD}" | docker login -u "${HARBOR_USER}" --password-stdin "${HARBOR_REGISTRY}"
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
   script:
     - docker build -t ${DOCKER_IMAGE}:${CI_COMMIT_TAG} .
     - docker push ${DOCKER_IMAGE}:${CI_COMMIT_TAG}
