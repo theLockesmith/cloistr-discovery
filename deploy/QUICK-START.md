@@ -36,23 +36,23 @@ kubectl -n coldforge-discovery port-forward svc/coldforge-discovery 8080:80
 curl http://localhost:8080/health
 
 # Test external access (wait for TLS cert ~2 min)
-curl https://discovery.coldforge.xyz/health
+curl https://discovery.cloistr.xyz/health
 ```
 
 ## Test API
 
 ```bash
 # List relays
-curl https://discovery.coldforge.xyz/api/v1/relays | jq .
+curl https://discovery.cloistr.xyz/api/v1/relays | jq .
 
 # Query pubkey's relays
-curl https://discovery.coldforge.xyz/api/v1/pubkey/<hex-pubkey>/relays | jq .
+curl https://discovery.cloistr.xyz/api/v1/pubkey/<hex-pubkey>/relays | jq .
 
 # List active streams
-curl https://discovery.coldforge.xyz/api/v1/activity/streams | jq .
+curl https://discovery.cloistr.xyz/api/v1/activity/streams | jq .
 
 # Check metrics
-curl https://discovery.coldforge.xyz/metrics
+curl https://discovery.cloistr.xyz/metrics
 ```
 
 ## Update Configuration

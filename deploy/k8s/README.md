@@ -50,7 +50,7 @@ Before deploying coldforge-discovery, ensure:
 Internet
    │
    ▼
-Traefik Ingress (discovery.coldforge.xyz)
+Traefik Ingress (discovery.cloistr.xyz)
    │
    ▼
 coldforge-discovery namespace
@@ -59,7 +59,7 @@ coldforge-discovery namespace
    │  └─ Container: discovery (port 8080)
    ├─ Service: coldforge-discovery (ClusterIP, port 80)
    ├─ ConfigMap: coldforge-discovery-config
-   ├─ Ingress: discovery.coldforge.xyz (TLS via cert-manager)
+   ├─ Ingress: discovery.cloistr.xyz (TLS via cert-manager)
    └─ ServiceMonitor: Prometheus metrics
       │
       ▼
@@ -136,7 +136,7 @@ Metrics are exposed at `/metrics` and scraped via ServiceMonitor:
 - API: http://coldforge-discovery.coldforge-discovery.svc.cluster.local/api/v1/
 
 **External (public):**
-- All endpoints: https://discovery.coldforge.xyz/
+- All endpoints: https://discovery.cloistr.xyz/
 
 ## Troubleshooting
 
@@ -173,7 +173,7 @@ kubectl -n coldforge-discovery get ingress
 kubectl -n coldforge-discovery get certificate
 
 # Test external access
-curl -I https://discovery.coldforge.xyz/health
+curl -I https://discovery.cloistr.xyz/health
 ```
 
 ### Verify Dragonfly cluster-wide instance

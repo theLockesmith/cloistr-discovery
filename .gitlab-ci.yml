@@ -114,4 +114,4 @@ deploy:
   when: manual
   environment:
     name: production
-    url: https://discovery.coldforge.xyz
+    url: https://discovery.cloistr.xyz

@@ -36,7 +36,7 @@ The Atlas role is located at:
 - Ingress disabled by default
 
 **After:**
-- Domain: `discovery.coldforge.xyz`
+- Domain: `discovery.cloistr.xyz`
 - Ingress enabled by default
 
 **Files Modified:**
@@ -110,7 +110,7 @@ log_level: info
 ingress_enabled: true
 ingress_class: traefik
 cert_issuer: letsencrypt-production
-discovery_domain: discovery.coldforge.xyz
+discovery_domain: discovery.cloistr.xyz
 
 # Kubernetes State
 kube_state: present
@@ -120,7 +120,7 @@ kube_state: present
 
 ```yaml
 # Production overrides
-discovery_domain: discovery.coldforge.xyz
+discovery_domain: discovery.cloistr.xyz
 
 seed_relays:
   - wss://relay.cloistr.xyz
@@ -156,7 +156,7 @@ log_level: info
                      ▼
 ┌─────────────────────────────────────────────────────────┐
 │              Traefik Ingress Controller                 │
-│            (discovery.coldforge.xyz)                    │
+│            (discovery.cloistr.xyz)                    │
 │                 TLS via cert-manager                    │
 └────────────────────┬────────────────────────────────────┘
                      │
@@ -241,11 +241,11 @@ kubectl -n coldforge-discovery port-forward svc/coldforge-discovery 8080:80
 curl http://localhost:8080/health
 
 # Test external access
-curl https://discovery.coldforge.xyz/health
-curl https://discovery.coldforge.xyz/api/v1/relays
+curl https://discovery.cloistr.xyz/health
+curl https://discovery.cloistr.xyz/api/v1/relays
 
 # Check Prometheus metrics
-curl https://discovery.coldforge.xyz/metrics
+curl https://discovery.cloistr.xyz/metrics
 
 # Verify Dragonfly connection
 kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
@@ -269,7 +269,7 @@ Before deploying coldforge-discovery, ensure:
    ```
 
 3. **DNS is configured:**
-   - `discovery.coldforge.xyz` points to cluster ingress
+   - `discovery.cloistr.xyz` points to cluster ingress
 
 4. **Cluster components are ready:**
    - Traefik ingress controller

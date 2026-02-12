@@ -65,11 +65,11 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
   ```
 
 ### 5. DNS Configuration
-- [ ] DNS record created for `discovery.coldforge.xyz`
+- [ ] DNS record created for `discovery.cloistr.xyz`
 - [ ] Points to cluster ingress IP/CNAME
 - [ ] DNS propagation verified
   ```bash
-  dig discovery.coldforge.xyz
+  dig discovery.cloistr.xyz
   ```
 
 ### 6. Atlas Role Configuration
@@ -82,7 +82,7 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
   cat ~/Atlas/roles/kube/coldforge-discovery/vars/main.yml
   ```
 - [ ] Verify seed relays are correct
-- [ ] Verify domain is `discovery.coldforge.xyz`
+- [ ] Verify domain is `discovery.cloistr.xyz`
 - [ ] Verify Dragonfly host is `dragonfly.dragonfly.svc.cluster.local`
 
 ## Deployment
@@ -181,35 +181,35 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 ### 14. External Access - Health Endpoint
 - [ ] Access via HTTPS
   ```bash
-  curl https://discovery.coldforge.xyz/health
+  curl https://discovery.cloistr.xyz/health
   ```
 - [ ] Returns 200 OK
 - [ ] Response shows healthy status
 - [ ] TLS certificate valid (no warnings)
   ```bash
-  curl -v https://discovery.coldforge.xyz/health 2>&1 | grep -i "subject\|issuer"
+  curl -v https://discovery.cloistr.xyz/health 2>&1 | grep -i "subject\|issuer"
   ```
 
 ### 15. API Endpoints
 - [ ] List relays endpoint works
   ```bash
-  curl https://discovery.coldforge.xyz/api/v1/relays | jq .
+  curl https://discovery.cloistr.xyz/api/v1/relays | jq .
   ```
 - [ ] Returns JSON array
 - [ ] Contains monitored relays
 - [ ] Pubkey query endpoint works
   ```bash
-  curl "https://discovery.coldforge.xyz/api/v1/pubkey/$(openssl rand -hex 32)/relays" | jq .
+  curl "https://discovery.cloistr.xyz/api/v1/pubkey/$(openssl rand -hex 32)/relays" | jq .
   ```
 - [ ] Activity streams endpoint works
   ```bash
-  curl https://discovery.coldforge.xyz/api/v1/activity/streams | jq .
+  curl https://discovery.cloistr.xyz/api/v1/activity/streams | jq .
   ```
 
 ### 16. Prometheus Metrics
 - [ ] Metrics endpoint accessible
   ```bash
-  curl https://discovery.coldforge.xyz/metrics
+  curl https://discovery.cloistr.xyz/metrics
   ```
 - [ ] Returns Prometheus format metrics
 - [ ] Contains coldforge-discovery specific metrics:
@@ -299,7 +299,7 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 ### 25. Cache Performance
 - [ ] Verify cache hit/miss rates in metrics
   ```bash
-  curl https://discovery.coldforge.xyz/metrics | grep cache
+  curl https://discovery.cloistr.xyz/metrics | grep cache
   ```
 - [ ] Check TTL behavior (inventories: 12h, activities: 15m)
 - [ ] Monitor cache memory usage in Dragonfly
@@ -307,7 +307,7 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 ### 26. API Performance
 - [ ] Test API response times
   ```bash
-  time curl https://discovery.coldforge.xyz/api/v1/relays
+  time curl https://discovery.cloistr.xyz/api/v1/relays
   ```
 - [ ] Should be < 1 second for typical queries
 - [ ] Test with different query parameters
@@ -324,9 +324,9 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 ### 28. Team Communication
 - [ ] Notify team of deployment
 - [ ] Share access URLs:
-  - API: https://discovery.coldforge.xyz/api/v1/
-  - Health: https://discovery.coldforge.xyz/health
-  - Metrics: https://discovery.coldforge.xyz/metrics
+  - API: https://discovery.cloistr.xyz/api/v1/
+  - Health: https://discovery.cloistr.xyz/health
+  - Metrics: https://discovery.cloistr.xyz/metrics
 - [ ] Document any changes to standard procedures
 
 ## Rollback Plan (If Needed)
@@ -408,9 +408,9 @@ kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discover
 
 ### Test Endpoints
 ```bash
-curl https://discovery.coldforge.xyz/health
-curl https://discovery.coldforge.xyz/api/v1/relays | jq .
-curl https://discovery.coldforge.xyz/metrics
+curl https://discovery.cloistr.xyz/health
+curl https://discovery.cloistr.xyz/api/v1/relays | jq .
+curl https://discovery.cloistr.xyz/metrics
 ```
 
 ### Troubleshooting
