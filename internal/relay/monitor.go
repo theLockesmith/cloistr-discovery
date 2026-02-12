@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -195,6 +196,38 @@ func (m *Monitor) RelayCount() int {
 	return len(m.knownRelays)
 }
 
+// networkStats holds aggregate statistics for the relay network
+type networkStats struct {
+	online   int64
+	degraded int64
+	offline  int64
+
+	// Aggregate counts
+	nipCounts           map[int]int
+	countryCounts       map[string]int
+	contentPolicyCounts map[string]int
+	moderationCounts    map[string]int
+	softwareCounts      map[string]int
+	paymentRequired     int
+	paymentFree         int
+	authRequired        int
+	authOpen            int
+
+	// Latencies for online relays
+	latencies []int
+}
+
+func newNetworkStats() *networkStats {
+	return &networkStats{
+		nipCounts:           make(map[int]int),
+		countryCounts:       make(map[string]int),
+		contentPolicyCounts: make(map[string]int),
+		moderationCounts:    make(map[string]int),
+		softwareCounts:      make(map[string]int),
+		latencies:           make([]int, 0),
+	}
+}
+
 func (m *Monitor) checkAllRelays(ctx context.Context) {
 	start := time.Now()
 	relays := m.GetRelays()
@@ -206,12 +239,8 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Limit concurrent checks
 
-	var (
-		online   int64
-		degraded int64
-		offline  int64
-		mu       sync.Mutex
-	)
+	stats := newNetworkStats()
+	var mu sync.Mutex
 
 	for _, url := range relays {
 		wg.Add(1)
@@ -231,19 +260,9 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 				}
 			}
 
-			// Count health statuses and record metrics
+			// Collect stats under lock
 			mu.Lock()
-			switch entry.Health {
-			case "online":
-				online++
-				metrics.HealthChecksTotal.WithLabelValues("online").Inc()
-			case "degraded":
-				degraded++
-				metrics.HealthChecksTotal.WithLabelValues("degraded").Inc()
-			default:
-				offline++
-				metrics.HealthChecksTotal.WithLabelValues("offline").Inc()
-			}
+			m.collectEntryStats(stats, entry)
 			mu.Unlock()
 
 			if err := m.cache.SetRelayEntry(ctx, entry, time.Hour); err != nil {
@@ -254,26 +273,141 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 
 	wg.Wait()
 
-	// Update health gauge metrics
-	metrics.RelaysByHealth.WithLabelValues("online").Set(float64(online))
-	metrics.RelaysByHealth.WithLabelValues("degraded").Set(float64(degraded))
-	metrics.RelaysByHealth.WithLabelValues("offline").Set(float64(offline))
+	// Update all metrics
+	m.updateNetworkMetrics(stats)
 
 	// Record cycle duration
 	metrics.HealthCheckCycleDurationSeconds.Observe(time.Since(start).Seconds())
 
-	// Update stats
+	// Update stats in cache
 	m.cache.SetStat(ctx, "relays:total", int64(len(relays)))
-	m.cache.SetStat(ctx, "relays:online", online)
-	m.cache.SetStat(ctx, "relays:degraded", degraded)
-	m.cache.SetStat(ctx, "relays:offline", offline)
+	m.cache.SetStat(ctx, "relays:online", stats.online)
+	m.cache.SetStat(ctx, "relays:degraded", stats.degraded)
+	m.cache.SetStat(ctx, "relays:offline", stats.offline)
 
 	slog.Info("relay check complete",
 		"total", len(relays),
-		"online", online,
-		"degraded", degraded,
-		"offline", offline,
+		"online", stats.online,
+		"degraded", stats.degraded,
+		"offline", stats.offline,
 	)
+}
+
+// collectEntryStats aggregates stats from a single relay entry (called under lock)
+func (m *Monitor) collectEntryStats(stats *networkStats, entry *cache.RelayEntry) {
+	// Health status
+	switch entry.Health {
+	case "online":
+		stats.online++
+		metrics.HealthChecksTotal.WithLabelValues("online").Inc()
+	case "degraded":
+		stats.degraded++
+		metrics.HealthChecksTotal.WithLabelValues("degraded").Inc()
+	default:
+		stats.offline++
+		metrics.HealthChecksTotal.WithLabelValues("offline").Inc()
+	}
+
+	// Only collect detailed stats for online/degraded relays
+	if entry.Health == "offline" {
+		return
+	}
+
+	// NIP support
+	for _, nip := range entry.SupportedNIPs {
+		stats.nipCounts[nip]++
+	}
+
+	// Country
+	if entry.CountryCode != "" {
+		stats.countryCounts[entry.CountryCode]++
+	}
+
+	// Content policy
+	if entry.ContentPolicy != "" {
+		stats.contentPolicyCounts[entry.ContentPolicy]++
+	}
+
+	// Moderation level
+	if entry.Moderation != "" {
+		stats.moderationCounts[entry.Moderation]++
+	}
+
+	// Software
+	if entry.Software != "" {
+		stats.softwareCounts[entry.Software]++
+	}
+
+	// Payment
+	if entry.PaymentRequired {
+		stats.paymentRequired++
+	} else {
+		stats.paymentFree++
+	}
+
+	// Auth
+	if entry.AuthRequired {
+		stats.authRequired++
+	} else {
+		stats.authOpen++
+	}
+
+	// Latency (only for responding relays)
+	if entry.LatencyMs > 0 {
+		stats.latencies = append(stats.latencies, entry.LatencyMs)
+	}
+}
+
+// updateNetworkMetrics updates all Prometheus metrics from collected stats
+func (m *Monitor) updateNetworkMetrics(stats *networkStats) {
+	// Health metrics
+	metrics.RelaysByHealth.WithLabelValues("online").Set(float64(stats.online))
+	metrics.RelaysByHealth.WithLabelValues("degraded").Set(float64(stats.degraded))
+	metrics.RelaysByHealth.WithLabelValues("offline").Set(float64(stats.offline))
+
+	// NIP support - reset and set new values
+	metrics.RelaysByNIP.Reset()
+	for nip, count := range stats.nipCounts {
+		metrics.RelaysByNIP.WithLabelValues(strconv.Itoa(nip)).Set(float64(count))
+	}
+
+	// Country distribution
+	metrics.RelaysByCountry.Reset()
+	for country, count := range stats.countryCounts {
+		metrics.RelaysByCountry.WithLabelValues(country).Set(float64(count))
+	}
+
+	// Content policy distribution
+	metrics.RelaysByContentPolicy.Reset()
+	for policy, count := range stats.contentPolicyCounts {
+		metrics.RelaysByContentPolicy.WithLabelValues(policy).Set(float64(count))
+	}
+
+	// Moderation level distribution
+	metrics.RelaysByModeration.Reset()
+	for level, count := range stats.moderationCounts {
+		metrics.RelaysByModeration.WithLabelValues(level).Set(float64(count))
+	}
+
+	// Software distribution
+	metrics.RelaysBySoftware.Reset()
+	for software, count := range stats.softwareCounts {
+		metrics.RelaysBySoftware.WithLabelValues(software).Set(float64(count))
+	}
+
+	// Payment requirement
+	metrics.RelaysByPayment.WithLabelValues("true").Set(float64(stats.paymentRequired))
+	metrics.RelaysByPayment.WithLabelValues("false").Set(float64(stats.paymentFree))
+
+	// Auth requirement
+	metrics.RelaysByAuth.WithLabelValues("true").Set(float64(stats.authRequired))
+	metrics.RelaysByAuth.WithLabelValues("false").Set(float64(stats.authOpen))
+
+	// Latency distribution
+	for _, latency := range stats.latencies {
+		metrics.RelayLatencyMilliseconds.Observe(float64(latency))
+		metrics.RelayLatencySummary.Observe(float64(latency))
+	}
 }
 
 func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry, error) {

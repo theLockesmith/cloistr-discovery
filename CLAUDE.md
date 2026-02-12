@@ -152,6 +152,7 @@ Environment variables:
 - [x] Relay monitor is now the primary data source (NIP-11 metadata + health checks)
 - [x] Prometheus/Grafana deployed in cluster (monitoring infrastructure ready)
 - [x] Service operational metrics (publisher, NIP-65, NIP-66, cache, health checks)
+- [x] Relay network aggregate metrics (by NIP, country, content policy, moderation, software, latency)
 
 ## Production Deployment
 
@@ -169,12 +170,11 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
-1. **Add relay network aggregate metrics** - relays by NIP support, by country, by content policy, by health status, average response latency, NIP-11 fetch success rate
-2. Implement exponential backoff for relay reconnections
-3. Add health check verification for background goroutines
-4. Add TTL expiration tests
-5. Expand test coverage (10 packages have no tests)
-6. Consider HorizontalPodAutoscaler for automatic scaling
+1. Implement exponential backoff for relay reconnections
+2. Add health check verification for background goroutines
+3. Add TTL expiration tests
+4. Expand test coverage (10 packages have no tests)
+5. Consider HorizontalPodAutoscaler for automatic scaling
 
 ## See Also
 

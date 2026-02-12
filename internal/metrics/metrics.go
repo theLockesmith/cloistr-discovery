@@ -133,3 +133,53 @@ var (
 		Buckets: prometheus.ExponentialBuckets(0.001, 2, 12), // 1ms to ~4s
 	}, []string{"type"})
 )
+
+// Relay network aggregate metrics
+var (
+	RelaysByNIP = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_nip",
+		Help: "Number of relays supporting each NIP",
+	}, []string{"nip"})
+
+	RelaysByCountry = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_country",
+		Help: "Number of relays by country code",
+	}, []string{"country"})
+
+	RelaysByContentPolicy = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_content_policy",
+		Help: "Number of relays by content policy",
+	}, []string{"policy"}) // anything, sfw, nsfw-allowed, nsfw-only
+
+	RelaysByModeration = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_moderation",
+		Help: "Number of relays by moderation level",
+	}, []string{"level"}) // unmoderated, light, active, strict
+
+	RelaysBySoftware = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_software",
+		Help: "Number of relays by software type",
+	}, []string{"software"})
+
+	RelaysByPayment = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_payment",
+		Help: "Number of relays by payment requirement",
+	}, []string{"required"}) // true, false
+
+	RelaysByAuth = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "discovery_network_relays_by_auth",
+		Help: "Number of relays by auth requirement",
+	}, []string{"required"}) // true, false
+
+	RelayLatencyMilliseconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "discovery_network_relay_latency_milliseconds",
+		Help:    "Distribution of relay response latencies in milliseconds",
+		Buckets: prometheus.ExponentialBuckets(50, 2, 10), // 50ms to ~50s
+	})
+
+	RelayLatencySummary = promauto.NewSummary(prometheus.SummaryOpts{
+		Name:       "discovery_network_relay_latency_summary_milliseconds",
+		Help:       "Summary of relay response latencies with quantiles",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+	})
+)
