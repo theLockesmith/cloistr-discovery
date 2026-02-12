@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
 
 // Client wraps the Redis client for discovery caching.
@@ -85,13 +87,17 @@ type RelayEntry struct {
 
 // SetRelayEntry caches a relay directory entry.
 func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.Duration) error {
+	metrics.CacheOperationsTotal.WithLabelValues("set_relay").Inc()
+
 	data, err := json.Marshal(entry)
 	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_relay").Inc()
 		return fmt.Errorf("failed to marshal relay entry: %w", err)
 	}
 
 	key := "relay:" + entry.URL
 	if err := c.rdb.Set(ctx, key, data, ttl).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_relay").Inc()
 		return fmt.Errorf("failed to set relay entry: %w", err)
 	}
 
@@ -162,17 +168,21 @@ func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.
 
 // GetRelayEntry retrieves a relay directory entry.
 func (c *Client) GetRelayEntry(ctx context.Context, url string) (*RelayEntry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_relay").Inc()
+
 	key := "relay:" + url
 	data, err := c.rdb.Get(ctx, key).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	}
 	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay").Inc()
 		return nil, fmt.Errorf("failed to get relay entry: %w", err)
 	}
 
 	var entry RelayEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay").Inc()
 		return nil, fmt.Errorf("failed to unmarshal relay entry: %w", err)
 	}
 

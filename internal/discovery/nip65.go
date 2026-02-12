@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
 
 // NIP65Crawler discovers relays by crawling NIP-65 relay list events (kind 10002).
@@ -54,6 +55,12 @@ func (n *NIP65Crawler) Start(ctx context.Context) {
 
 // crawl fetches NIP-65 events from seed relays and extracts relay URLs.
 func (n *NIP65Crawler) crawl(ctx context.Context) {
+	start := time.Now()
+	defer func() {
+		metrics.NIP65CrawlDurationSeconds.Observe(time.Since(start).Seconds())
+		metrics.NIP65CrawlsTotal.Inc()
+	}()
+
 	slog.Debug("starting NIP-65 crawl")
 
 	// Get all known relays (seed + discovered)
@@ -160,6 +167,8 @@ func (n *NIP65Crawler) processNIP65Event(ctx context.Context, event *nostr.Event
 		return 0
 	}
 
+	metrics.NIP65EventsProcessed.Inc()
+
 	count := 0
 	for _, tag := range event.Tags {
 		// NIP-65 uses "r" tags: ["r", "wss://relay.example.com", "read"|"write"]
@@ -171,6 +180,7 @@ func (n *NIP65Crawler) processNIP65Event(ctx context.Context, event *nostr.Event
 					return count
 				case n.output <- DiscoveredRelay{URL: url, Source: "nip65"}:
 					count++
+					metrics.NIP65RelaysDiscovered.Inc()
 				}
 			}
 		}

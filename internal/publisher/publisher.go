@@ -17,6 +17,7 @@ import (
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
 
 // Publisher publishes kind 30072 relay directory events.
@@ -117,10 +118,17 @@ func (p *Publisher) Start(ctx context.Context) {
 
 // publishAll publishes all relay entries to configured relays.
 func (p *Publisher) publishAll(ctx context.Context) {
+	start := time.Now()
+	defer func() {
+		metrics.PublishDurationSeconds.Observe(time.Since(start).Seconds())
+		metrics.PublishCyclesTotal.Inc()
+	}()
+
 	// Get all relay URLs from cache
 	urls, err := p.cache.GetAllRelayURLs(ctx)
 	if err != nil {
 		slog.Error("failed to get relay URLs for publishing", "error", err)
+		metrics.PublishErrorsTotal.WithLabelValues("", "cache_error").Inc()
 		return
 	}
 
@@ -170,6 +178,7 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
 		slog.Debug("failed to connect to publish relay", "url", relayURL, "error", err)
+		metrics.PublishErrorsTotal.WithLabelValues(relayURL, "connection").Inc()
 		return 0
 	}
 	defer relay.Close()
@@ -181,6 +190,7 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 		err := relay.Publish(ctx, *event)
 		if err == nil {
 			published++
+			metrics.EventsPublishedTotal.WithLabelValues(relayURL).Inc()
 			continue
 		}
 
@@ -195,6 +205,7 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 			})
 			if authErr != nil {
 				slog.Warn("NIP-42 auth failed", "url", relayURL, "error", authErr)
+				metrics.PublishErrorsTotal.WithLabelValues(relayURL, "auth_failed").Inc()
 				return published
 			}
 			slog.Info("NIP-42 auth successful", "url", relayURL)
@@ -202,13 +213,16 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 			// Retry this event after auth
 			if retryErr := relay.Publish(ctx, *event); retryErr != nil {
 				slog.Debug("publish still failed after auth", "url", relayURL, "error", retryErr)
+				metrics.PublishErrorsTotal.WithLabelValues(relayURL, "publish_after_auth").Inc()
 			} else {
 				published++
+				metrics.EventsPublishedTotal.WithLabelValues(relayURL).Inc()
 			}
 			continue
 		}
 
 		slog.Debug("failed to publish to relay", "url", relayURL, "error", err)
+		metrics.PublishErrorsTotal.WithLabelValues(relayURL, "publish").Inc()
 	}
 
 	if published > 0 {

@@ -15,6 +15,7 @@ import (
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
 
 // NIP11Info represents the NIP-11 relay information document.
@@ -195,8 +196,12 @@ func (m *Monitor) RelayCount() int {
 }
 
 func (m *Monitor) checkAllRelays(ctx context.Context) {
+	start := time.Now()
 	relays := m.GetRelays()
 	slog.Info("checking relays", "count", len(relays))
+
+	// Update monitored relays gauge
+	metrics.RelaysMonitored.Set(float64(len(relays)))
 
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Limit concurrent checks
@@ -226,15 +231,18 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 				}
 			}
 
-			// Count health statuses
+			// Count health statuses and record metrics
 			mu.Lock()
 			switch entry.Health {
 			case "online":
 				online++
+				metrics.HealthChecksTotal.WithLabelValues("online").Inc()
 			case "degraded":
 				degraded++
+				metrics.HealthChecksTotal.WithLabelValues("degraded").Inc()
 			default:
 				offline++
+				metrics.HealthChecksTotal.WithLabelValues("offline").Inc()
 			}
 			mu.Unlock()
 
@@ -245,6 +253,14 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	}
 
 	wg.Wait()
+
+	// Update health gauge metrics
+	metrics.RelaysByHealth.WithLabelValues("online").Set(float64(online))
+	metrics.RelaysByHealth.WithLabelValues("degraded").Set(float64(degraded))
+	metrics.RelaysByHealth.WithLabelValues("offline").Set(float64(offline))
+
+	// Record cycle duration
+	metrics.HealthCheckCycleDurationSeconds.Observe(time.Since(start).Seconds())
 
 	// Update stats
 	m.cache.SetStat(ctx, "relays:total", int64(len(relays)))
@@ -265,15 +281,24 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 	httpURL := wsToHTTP(url)
 
 	start := time.Now()
+	defer func() {
+		metrics.HealthCheckDurationSeconds.Observe(time.Since(start).Seconds())
+	}()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", httpURL, nil)
 	if err != nil {
+		metrics.NIP11FetchErrorsTotal.WithLabelValues("request_create").Inc()
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/nostr+json")
 
 	resp, err := m.client.Do(req)
 	if err != nil {
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+			metrics.NIP11FetchErrorsTotal.WithLabelValues("timeout").Inc()
+		} else {
+			metrics.NIP11FetchErrorsTotal.WithLabelValues("connection").Inc()
+		}
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -281,16 +306,19 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 	latency := time.Since(start)
 
 	if resp.StatusCode != http.StatusOK {
+		metrics.NIP11FetchErrorsTotal.WithLabelValues("http_error").Inc()
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // 1MB limit
 	if err != nil {
+		metrics.NIP11FetchErrorsTotal.WithLabelValues("read_body").Inc()
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var info NIP11Info
 	if err := json.Unmarshal(body, &info); err != nil {
+		metrics.NIP11FetchErrorsTotal.WithLabelValues("parse").Inc()
 		return nil, fmt.Errorf("failed to parse NIP-11: %w", err)
 	}
 

@@ -9,6 +9,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
 
 // NIP66Consumer discovers relays by consuming NIP-66 relay monitor events (kind 30166).
@@ -83,6 +84,9 @@ func (n *NIP66Consumer) consumeFromRelay(ctx context.Context, relayURL string) {
 	}
 	defer sub.Unsub()
 
+	metrics.NIP66ConnectionsActive.Inc()
+	defer metrics.NIP66ConnectionsActive.Dec()
+
 	slog.Debug("subscribed for NIP-66 events", "relay", relayURL)
 
 eventLoop:
@@ -105,6 +109,8 @@ func (n *NIP66Consumer) processNIP66Event(ctx context.Context, event *nostr.Even
 		return
 	}
 
+	metrics.NIP66EventsConsumed.Inc()
+
 	// NIP-66 uses "d" tag for the relay URL
 	var relayURL string
 	for _, tag := range event.Tags {
@@ -126,6 +132,7 @@ func (n *NIP66Consumer) processNIP66Event(ctx context.Context, event *nostr.Even
 	case <-ctx.Done():
 		return
 	case n.output <- DiscoveredRelay{URL: relayURL, Source: "nip66"}:
+		metrics.NIP66RelaysDiscovered.Inc()
 		slog.Debug("discovered relay from NIP-66", "url", relayURL, "monitor", event.PubKey[:16])
 	}
 }

@@ -7,42 +7,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
 )
-
-// Prometheus metrics
-var (
-	queriesTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "discovery_queries_total",
-			Help: "Total number of discovery queries by type",
-		},
-		[]string{"type"},
-	)
-	relaysMonitored = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "discovery_relays_monitored",
-			Help: "Number of relays being monitored",
-		},
-	)
-	relaysOnline = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "discovery_relays_online",
-			Help: "Number of relays currently online",
-		},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(queriesTotal)
-	prometheus.MustRegister(relaysMonitored)
-	prometheus.MustRegister(relaysOnline)
-}
 
 // Server handles API requests.
 type Server struct {
@@ -81,12 +53,17 @@ type RelaysResponse struct {
 //   - language: filter by language (ISO 639-1 code)
 //   - community: filter by community name
 func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	defer func() {
+		metrics.QueryDurationSeconds.WithLabelValues("relays").Observe(time.Since(start).Seconds())
+	}()
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	queriesTotal.WithLabelValues("relays").Inc()
+	metrics.QueriesTotal.WithLabelValues("relays").Inc()
 
 	ctx := r.Context()
 	q := r.URL.Query()
