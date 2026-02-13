@@ -47,7 +47,7 @@ The Atlas role will create:
 - ConfigMap with environment variables
 - Deployment with 1 replica
 - Service (ClusterIP on port 80)
-- Ingress for `discovery.cloistr.xyz`
+- Ingress for `discover.cloistr.xyz`
 - ServiceMonitor for Prometheus metrics
 
 ### Deployment Output
@@ -81,7 +81,7 @@ Cache: Cluster-wide Dragonfly (Redis-compatible)
   - dragonfly.dragonfly.svc.cluster.local:6379
 
 External Access:
-  - https://discovery.cloistr.xyz
+  - https://discover.cloistr.xyz
 
 ============================================
 ```
@@ -140,26 +140,26 @@ kubectl -n coldforge-discovery get certificate
 
 Test the public endpoint:
 ```bash
-curl https://discovery.cloistr.xyz/health
+curl https://discover.cloistr.xyz/health
 ```
 
 ### 5. Test API Endpoints
 
 ```bash
 # List monitored relays
-curl https://discovery.cloistr.xyz/api/v1/relays | jq .
+curl https://discover.cloistr.xyz/api/v1/relays | jq .
 
 # Query relays for a specific pubkey
-curl https://discovery.cloistr.xyz/api/v1/pubkey/<hex-pubkey>/relays | jq .
+curl https://discover.cloistr.xyz/api/v1/pubkey/<hex-pubkey>/relays | jq .
 
 # List active streams
-curl https://discovery.cloistr.xyz/api/v1/activity/streams | jq .
+curl https://discover.cloistr.xyz/api/v1/activity/streams | jq .
 ```
 
 ### 6. Verify Prometheus Metrics
 
 ```bash
-curl https://discovery.cloistr.xyz/metrics
+curl https://discover.cloistr.xyz/metrics
 ```
 
 Should show metrics like:

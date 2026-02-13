@@ -4,7 +4,7 @@
 
 **NDP Focus:** Kind 30072 only (Relay Directory Entry). Other kinds have been deferred/dropped.
 
-**Status:** Deployed - Live on Atlantis at `https://discovery.cloistr.xyz`
+**Status:** Deployed - Live on Atlantis at `https://discover.cloistr.xyz`
 
 ## Documentation
 
@@ -157,7 +157,7 @@ Environment variables:
 
 ## Production Deployment
 
-- **URL:** `https://discovery.cloistr.xyz`
+- **URL:** `https://discover.cloistr.xyz`
 - **Cluster:** Atlantis (OpenShift)
 - **Namespace:** `coldforge-discovery`
 - **Image:** Built and pushed by CI/CD pipeline

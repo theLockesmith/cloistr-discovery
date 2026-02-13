@@ -15,10 +15,10 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - discovery.cloistr.xyz
+        - discover.cloistr.xyz
       secretName: coldforge-discovery-tls
   rules:
-    - host: discovery.cloistr.xyz
+    - host: discover.cloistr.xyz
       http:
         paths:
           - path: /
