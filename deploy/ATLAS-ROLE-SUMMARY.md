@@ -75,8 +75,7 @@ namespace: coldforge-discovery
 discovery_port: 8080
 coldforge_discovery_replicas: 1
 
-# Image
-coldforge_discovery_image: registry.coldforge.xyz/coldforge/coldforge-discovery
+# Image (set by CI/CD)
 coldforge_discovery_image_tag: latest
 
 # Resources
@@ -262,11 +261,7 @@ Before deploying coldforge-discovery, ensure:
    kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dragonfly --timeout=30m
    ```
 
-2. **Docker image is available in registry:**
-   ```bash
-   cd ~/Development/coldforge-discovery
-   make docker-publish
-   ```
+2. **Docker image is available in registry** (built automatically by CI/CD on merge to main)
 
 3. **DNS is configured:**
    - `discovery.cloistr.xyz` points to cluster ingress

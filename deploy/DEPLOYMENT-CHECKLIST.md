@@ -11,19 +11,7 @@ Use this checklist when deploying coldforge-discovery to production (Atlantis cl
 - [ ] Docker Compose local testing completed
 
 ### 2. Docker Image
-- [ ] Image built successfully
-  ```bash
-  make docker-build
-  ```
-- [ ] Image pushed to registry
-  ```bash
-  make docker-push
-  # Or: make docker-publish
-  ```
-- [ ] Verify image in Harbor
-  ```bash
-  curl -u <username> https://registry.coldforge.xyz/v2/coldforge/coldforge-discovery/tags/list
-  ```
+- [ ] CI/CD pipeline completed successfully (images built and pushed automatically on merge to main)
 
 ### 3. Dragonfly Cluster-Wide Instance
 - [ ] Dragonfly namespace exists

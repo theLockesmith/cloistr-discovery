@@ -31,22 +31,7 @@ kubectl -n dragonfly exec -it dragonfly-0 -- redis-cli ping
 
 ### 2. Docker Image
 
-The deployment pulls from the Harbor registry at `registry.coldforge.xyz`.
-
-**Build and push the image:**
-```bash
-# From the coldforge-discovery repository
-make docker-build
-make docker-push
-
-# Or use the combined command
-make docker-publish
-```
-
-**Verify the image exists:**
-```bash
-curl -u <username> https://registry.coldforge.xyz/v2/coldforge/coldforge-discovery/tags/list
-```
+Images are built and pushed automatically by the CI/CD pipeline on merge to main.
 
 ## Deployment via Atlas
 

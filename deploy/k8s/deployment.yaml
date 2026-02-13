@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
         - name: discovery
-          image: registry.coldforge.xyz/coldforge/coldforge-discovery:latest
+          image: # Set by CI/CD pipeline
           imagePullPolicy: Always
           ports:
             - name: http
