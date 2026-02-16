@@ -11,8 +11,7 @@ kubectl -n dragonfly get pods
 # If not deployed:
 atlas kube apply dragonfly --kube-context atlantis
 
-# 2. Verify Docker image exists
-make docker-publish  # Build and push to registry
+# 2. Verify Docker image exists (built automatically by CI/CD)
 ```
 
 ## Deploy
@@ -35,7 +34,7 @@ kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discover
 kubectl -n coldforge-discovery port-forward svc/coldforge-discovery 8080:80
 curl http://localhost:8080/health
 
-# Test external access (wait for TLS cert ~2 min)
+# Test external access (via Cloudflare Tunnel)
 curl https://discover.cloistr.xyz/health
 ```
 
@@ -45,11 +44,11 @@ curl https://discover.cloistr.xyz/health
 # List relays
 curl https://discover.cloistr.xyz/api/v1/relays | jq .
 
-# Query pubkey's relays
-curl https://discover.cloistr.xyz/api/v1/pubkey/<hex-pubkey>/relays | jq .
+# Filter by health status
+curl 'https://discover.cloistr.xyz/api/v1/relays?health=online' | jq .
 
-# List active streams
-curl https://discover.cloistr.xyz/api/v1/activity/streams | jq .
+# Get specific relay
+curl 'https://discover.cloistr.xyz/api/v1/relay/wss%3A%2F%2Frelay.damus.io' | jq .
 
 # Check metrics
 curl https://discover.cloistr.xyz/metrics
@@ -65,15 +64,14 @@ vim ~/Atlas/roles/kube/coldforge-discovery/vars/main.yml
 atlas kube apply coldforge-discovery --kube-context atlantis
 ```
 
-## Scale
+## Scaling
+
+**Note:** Current architecture is single-replica only. See DEPLOYMENT.md for details.
 
 ```bash
-# Via kubectl (temporary)
-kubectl -n coldforge-discovery scale deployment coldforge-discovery --replicas=3
-
-# Via Atlas (permanent)
-# Edit ~/Atlas/roles/kube/coldforge-discovery/vars/main.yml
-# Set: coldforge_discovery_replicas: 3
+# Vertical scaling (recommended) - edit resource limits
+vim ~/Atlas/roles/kube/coldforge-discovery/defaults/main.yml
+# Update coldforge_discovery_resources section
 atlas kube apply coldforge-discovery --kube-context atlantis
 ```
 
@@ -90,11 +88,8 @@ kubectl -n coldforge-discovery get events --sort-by='.lastTimestamp'
 kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
   sh -c 'nc -zv dragonfly.dragonfly.svc.cluster.local 6379'
 
-# Check ingress
-kubectl -n coldforge-discovery describe ingress coldforge-discovery
-
-# Check certificate
-kubectl -n coldforge-discovery get certificate coldforge-discovery-tls
+# Check background worker status
+curl https://discover.cloistr.xyz/health | jq .workers
 ```
 
 ## Remove
@@ -108,4 +103,3 @@ atlas kube apply coldforge-discovery --kube-context atlantis --extra-vars "kube_
 - Full Deployment Guide: `DEPLOYMENT.md`
 - Project Documentation: `CLAUDE.md`
 - Atlas Role: `~/Atlas/roles/kube/coldforge-discovery/`
-- K8s Manifests: `deploy/k8s/`

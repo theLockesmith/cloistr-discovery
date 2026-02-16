@@ -233,3 +233,29 @@ func (c *Coordinator) GetLastFetchTimes() LastFetchTimes {
 
 	return times
 }
+
+// NIP65LastCrawl returns the last crawl time for NIP-65, or zero if disabled.
+func (c *Coordinator) NIP65LastCrawl() time.Time {
+	if c.nip65Crawler != nil {
+		return c.nip65Crawler.LastCrawl()
+	}
+	return time.Time{}
+}
+
+// NIP66LastConsume returns the last consume time for NIP-66, or zero if disabled.
+func (c *Coordinator) NIP66LastConsume() time.Time {
+	if c.nip66Consumer != nil {
+		return c.nip66Consumer.LastConsume()
+	}
+	return time.Time{}
+}
+
+// IsNIP65Enabled returns true if NIP-65 crawling is enabled.
+func (c *Coordinator) IsNIP65Enabled() bool {
+	return c.nip65Crawler != nil
+}
+
+// IsNIP66Enabled returns true if NIP-66 consumption is enabled.
+func (c *Coordinator) IsNIP66Enabled() bool {
+	return c.nip66Consumer != nil
+}

@@ -8,11 +8,10 @@
 
 ## Documentation
 
-Full documentation: `~/claude/coldforge/services/discovery/CLAUDE.md`
-NIP Draft (minimal): `~/claude/coldforge/research/nip-draft-ndp-minimal.md`
-NIP Draft (full): `~/claude/coldforge/research/nip-draft-discovery-protocol.md`
-Architecture: `~/claude/coldforge/research/architecture-discovery-cache-relay.md`
-Coldforge overview: `~/claude/coldforge/CLAUDE.md`
+- [README.md](README.md) - Project overview
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Full deployment guide
+- [deploy/QUICK-START.md](deploy/QUICK-START.md) - Quick deployment reference
+- [deploy/ATLAS-ROLE-SUMMARY.md](deploy/ATLAS-ROLE-SUMMARY.md) - Atlas role details
 
 ## Autonomous Work Mode (CRITICAL)
 
@@ -143,7 +142,6 @@ Environment variables:
 - [x] NIP-42 auth for publishing to authenticated relays (tested with cloistr)
 - [x] Discovery sources: NIP-65 crawling, NIP-66 consumption, peer discovery, hosted lists
 - [x] Admin interface with auth middleware and dashboard
-- [x] Unit tests for cache layer (12 tests) and API handlers (7 tests)
 - [x] Docker Compose local development environment
 - [x] Deploy to Atlantis (Atlas role, Harbor image, Cloudflare Tunnel, Dragonfly auth, NetworkPolicy)
 - [x] Production verified: 900+ relays tracked, 400+ online, publishing to 2 relays
@@ -154,6 +152,9 @@ Environment variables:
 - [x] Service operational metrics (publisher, NIP-65, NIP-66, cache, health checks)
 - [x] Relay network aggregate metrics (by NIP, country, content policy, moderation, software, latency)
 - [x] Exponential backoff for NIP-66 relay reconnections
+- [x] Health check verification for background goroutines (internal/health package)
+- [x] TTL expiration tests (8 tests in cache package)
+- [x] Comprehensive test suite (357 test runs across 11 packages: api, admin, cache, config, discovery, health, metrics, publisher, relay, backoff)
 
 ## Production Deployment
 
@@ -171,14 +172,29 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
-1. Add health check verification for background goroutines
-2. Add TTL expiration tests
-3. Expand test coverage (10 packages have no tests)
-4. Consider HorizontalPodAutoscaler for automatic scaling
+1. Improve UI filtering (add NIP filter dropdowns, search, sorting)
+2. Add relay submission form to public UI
+3. Grafana dashboard for relay network analytics
 
-## See Also
+## Scaling Considerations (HPA)
 
-- Service Documentation: `~/claude/coldforge/services/discovery/CLAUDE.md`
-- NIP Draft: `~/claude/coldforge/research/nip-draft-discovery-protocol.md`
-- Architecture: `~/claude/coldforge/research/architecture-discovery-cache-relay.md`
-- Coldforge Overview: `~/claude/coldforge/CLAUDE.md`
+**Current architecture does NOT support horizontal scaling** without code changes.
+
+Background workers that would run on ALL replicas:
+- **Relay Monitor** - Duplicate health checks to same relays
+- **NIP-65 Crawler** - Duplicate crawls, wasted resources
+- **NIP-66 Consumer** - Multiple subscriptions, duplicate events
+- **Publisher** - **Critical:** Would publish duplicate Kind 30072 events
+
+**Requirements for safe HPA:**
+1. **Leader election** - Only one replica runs background workers (use kubernetes-client or Redis lock)
+2. **Work distribution** - Partition relay URLs across replicas using consistent hashing
+3. **Deduplication** - Use Redis SETNX for distributed locking on publish operations
+
+**Recommendation:** Keep single replica until usage justifies the complexity. Current deployment handles 900+ relays with minimal resources (100m CPU, 128Mi memory). Scale vertically first if needed.
+
+## Related Links
+
+- **Live Instance:** https://discover.cloistr.xyz
+- **Atlas Role:** `~/Atlas/roles/kube/coldforge-discovery/`
+- **CI/CD:** GitLab pipeline builds and pushes images on merge to main

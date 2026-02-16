@@ -29,6 +29,7 @@ Configuration is managed via Ansible variables in the Atlas role:
 
 - `defaults/main.yml` - Default configuration
 - `vars/main.yml` - Production overrides
+- `vars/vault.yml` - Secrets (NOSTR_PRIVATE_KEY, ADMIN_API_KEY)
 - `tasks/shared_task_file.yml` - Kubernetes manifest definitions
 
 ## Prerequisites
@@ -40,9 +41,9 @@ Before deploying coldforge-discovery, ensure:
    atlas kube apply dragonfly --kube-context atlantis
    ```
 
-2. **cert-manager is installed** for TLS certificates
+2. **Cloudflare Tunnel is configured** (`cloistr-tunnel` role)
 
-3. **Traefik ingress controller is configured**
+3. **Prometheus operator is installed** for ServiceMonitor
 
 ## Architecture
 
@@ -50,7 +51,10 @@ Before deploying coldforge-discovery, ensure:
 Internet
    │
    ▼
-Traefik Ingress (discover.cloistr.xyz)
+Cloudflare Tunnel (discover.cloistr.xyz)
+   │
+   ├── /api/* → coldforge-discovery (backend)
+   └── /* → coldforge-discovery-ui (frontend)
    │
    ▼
 coldforge-discovery namespace
@@ -59,7 +63,7 @@ coldforge-discovery namespace
    │  └─ Container: discovery (port 8080)
    ├─ Service: coldforge-discovery (ClusterIP, port 80)
    ├─ ConfigMap: coldforge-discovery-config
-   ├─ Ingress: discover.cloistr.xyz (TLS via cert-manager)
+   ├─ Secret: coldforge-discovery-secrets
    └─ ServiceMonitor: Prometheus metrics
       │
       ▼
@@ -73,9 +77,9 @@ coldforge-discovery namespace
 |----------|------|-----------|---------|
 | Namespace | coldforge-discovery | - | Isolation |
 | ConfigMap | coldforge-discovery-config | coldforge-discovery | Environment config |
+| Secret | coldforge-discovery-secrets | coldforge-discovery | Private key, API key |
 | Deployment | coldforge-discovery | coldforge-discovery | Main service |
 | Service | coldforge-discovery | coldforge-discovery | Internal routing |
-| Ingress | coldforge-discovery | coldforge-discovery | External access |
 | ServiceMonitor | coldforge-discovery | coldforge-discovery | Prometheus scraping |
 
 ## Configuration Variables
@@ -86,13 +90,16 @@ Key environment variables (set via ConfigMap):
 |----------|---------|-------------|
 | DISCOVERY_PORT | 8080 | HTTP server port |
 | LOG_LEVEL | info | Logging level |
-| CACHE_URL | redis://dragonfly.dragonfly.svc.cluster.local:6379 | Dragonfly connection |
+| CACHE_URL | redis://dragonfly...:6379 | Dragonfly connection |
 | SEED_RELAYS | (comma-separated) | Initial relays to monitor |
 | RELAY_CHECK_INTERVAL | 300 | Health check interval (seconds) |
 | NIP11_TIMEOUT | 10 | NIP-11 fetch timeout (seconds) |
-| INVENTORY_TTL | 12 | Cache TTL for inventories (hours) |
-| ACTIVITY_TTL | 15 | Cache TTL for activities (minutes) |
-| PUBLISH_RELAY | wss://relay.cloistr.xyz | Relay for publishing NDP events |
+| PUBLISH_ENABLED | true | Enable Kind 30072 publishing |
+| PUBLISH_RELAYS | (comma-separated) | Relays to publish events to |
+| PUBLISH_INTERVAL | 10 | Minutes between publish cycles |
+| NIP65_CRAWL_ENABLED | true | Enable NIP-65 discovery |
+| NIP66_ENABLED | true | Consume NIP-66 events |
+| ADMIN_ENABLED | true | Enable admin endpoints |
 
 ## Resource Limits
 
@@ -163,19 +170,6 @@ kubectl -n coldforge-discovery port-forward svc/coldforge-discovery 8080:80
 curl http://localhost:8080/health
 ```
 
-### Check ingress and TLS
-
-```bash
-# View ingress
-kubectl -n coldforge-discovery get ingress
-
-# Check certificate
-kubectl -n coldforge-discovery get certificate
-
-# Test external access
-curl -I https://discover.cloistr.xyz/health
-```
-
 ### Verify Dragonfly cluster-wide instance
 
 ```bash
@@ -187,18 +181,13 @@ kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
   sh -c 'nc -zv dragonfly.dragonfly.svc.cluster.local 6379'
 ```
 
-## Manual Deployment (Not Recommended)
+## Scaling
 
-If you need to deploy manually for testing, you can generate the manifests:
-
-```bash
-# This would require extracting from the Atlas role
-# Not recommended - use Atlas instead
-```
+**Note:** Current architecture supports single replica only. See DEPLOYMENT.md for details on why horizontal scaling requires code changes.
 
 ## Related Documentation
 
-- Service Documentation: `~/claude/coldforge/services/discovery/CLAUDE.md`
-- NIP Draft: `~/claude/coldforge/research/nip-draft-discovery-protocol.md`
+- [CLAUDE.md](../../CLAUDE.md) - Project documentation
+- [DEPLOYMENT.md](../../DEPLOYMENT.md) - Full deployment guide
 - Atlas Role: `~/Atlas/roles/kube/coldforge-discovery/`
 - Dragonfly Role: `~/Atlas/roles/kube/dragonfly/`

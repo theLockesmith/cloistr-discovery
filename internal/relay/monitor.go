@@ -49,6 +49,7 @@ type Monitor struct {
 
 	mu          sync.RWMutex
 	knownRelays map[string]bool
+	lastCheck   time.Time
 
 	// Channel for receiving discovered relays from discovery sources
 	discoveryInput chan string
@@ -196,6 +197,13 @@ func (m *Monitor) RelayCount() int {
 	return len(m.knownRelays)
 }
 
+// LastCheck returns the time of the last health check cycle.
+func (m *Monitor) LastCheck() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastCheck
+}
+
 // networkStats holds aggregate statistics for the relay network
 type networkStats struct {
 	online   int64
@@ -284,6 +292,11 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	m.cache.SetStat(ctx, "relays:online", stats.online)
 	m.cache.SetStat(ctx, "relays:degraded", stats.degraded)
 	m.cache.SetStat(ctx, "relays:offline", stats.offline)
+
+	// Update last check time
+	m.mu.Lock()
+	m.lastCheck = time.Now()
+	m.mu.Unlock()
 
 	slog.Info("relay check complete",
 		"total", len(relays),

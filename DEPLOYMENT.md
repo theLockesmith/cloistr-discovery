@@ -45,9 +45,9 @@ atlas kube apply coldforge-discovery --kube-context atlantis
 The Atlas role will create:
 - Namespace: `coldforge-discovery`
 - ConfigMap with environment variables
+- Secret for NOSTR_PRIVATE_KEY and ADMIN_API_KEY
 - Deployment with 1 replica
 - Service (ClusterIP on port 80)
-- Ingress for `discover.cloistr.xyz`
 - ServiceMonitor for Prometheus metrics
 
 ### Deployment Output
@@ -68,14 +68,10 @@ Internal Endpoints:
 
 API Endpoints:
   - GET /api/v1/relays - List relays (filter: health, nips, location)
-  - GET /api/v1/pubkey/{pk}/relays - Find relays with pubkey's content
-  - GET /api/v1/activity/streams - List active streams
+  - GET /api/v1/relay/{url} - Get relay details
 
-NDP Event Kinds:
-  - 30066: Relay Inventory
-  - 30067: Activity Announcement
-  - 30068: Discovery Query
-  - 30069: Relay Directory Entry
+NDP Event Kind:
+  - 30072: Relay Directory Entry (published)
 
 Cache: Cluster-wide Dragonfly (Redis-compatible)
   - dragonfly.dragonfly.svc.cluster.local:6379
@@ -110,6 +106,9 @@ Look for:
 - Successful Dragonfly connection
 - Relay monitoring starting
 - HTTP server listening on port 8080
+- NIP-65 crawler starting (if enabled)
+- NIP-66 consumer connecting (if enabled)
+- Publisher starting (if enabled)
 
 ### 3. Test Health Endpoint (Internal)
 
@@ -125,20 +124,17 @@ Expected response:
 ```json
 {
   "status": "healthy",
-  "timestamp": "2026-02-01T12:00:00Z",
-  "cache": "connected",
-  "relays_monitored": 7
+  "workers": {
+    "relay-monitor": {"status": "healthy", "last_check": "2026-02-14T12:00:00Z"},
+    "nip65-crawler": {"status": "healthy", "last_check": "2026-02-14T12:00:00Z"},
+    "publisher": {"status": "healthy", "last_check": "2026-02-14T12:00:00Z"}
+  }
 }
 ```
 
 ### 4. Test External Access
 
-Wait for TLS certificate to be issued (1-2 minutes):
-```bash
-kubectl -n coldforge-discovery get certificate
-```
-
-Test the public endpoint:
+The service is exposed via Cloudflare Tunnel at `discover.cloistr.xyz`:
 ```bash
 curl https://discover.cloistr.xyz/health
 ```
@@ -149,11 +145,11 @@ curl https://discover.cloistr.xyz/health
 # List monitored relays
 curl https://discover.cloistr.xyz/api/v1/relays | jq .
 
-# Query relays for a specific pubkey
-curl https://discover.cloistr.xyz/api/v1/pubkey/<hex-pubkey>/relays | jq .
+# Filter by health status
+curl https://discover.cloistr.xyz/api/v1/relays?health=online | jq .
 
-# List active streams
-curl https://discover.cloistr.xyz/api/v1/activity/streams | jq .
+# Get specific relay
+curl https://discover.cloistr.xyz/api/v1/relay/wss%3A%2F%2Frelay.damus.io | jq .
 ```
 
 ### 6. Verify Prometheus Metrics
@@ -164,13 +160,13 @@ curl https://discover.cloistr.xyz/metrics
 
 Should show metrics like:
 ```
-# HELP discovery_relays_monitored Number of relays being monitored
-# TYPE discovery_relays_monitored gauge
-discovery_relays_monitored 7
+# HELP discovery_relays_total Total number of relays tracked
+# TYPE discovery_relays_total gauge
+discovery_relays_total 912
 
-# HELP discovery_cache_hits Total cache hits
-# TYPE discovery_cache_hits counter
-discovery_cache_hits 142
+# HELP discovery_relays_online Number of online relays
+# TYPE discovery_relays_online gauge
+discovery_relays_online 423
 ...
 ```
 
@@ -192,35 +188,66 @@ Key variables:
 |----------|---------|-------------|
 | `seed_relays` | (list) | Initial relays to monitor |
 | `relay_check_interval` | 300 | Health check interval (seconds) |
-| `inventory_ttl` | 12 | Cache TTL for inventories (hours) |
-| `activity_ttl` | 15 | Cache TTL for activities (minutes) |
+| `publish_enabled` | true | Enable Kind 30072 publishing |
+| `publish_interval` | 10 | Minutes between publish cycles |
+| `nip65_crawl_enabled` | true | Enable NIP-65 discovery |
+| `nip65_crawl_interval` | 30 | Minutes between crawls |
+| `nip66_enabled` | true | Consume NIP-66 events |
 | `log_level` | info | Logging level (debug, info, warn, error) |
 
-### Scaling
+### Secrets
 
-To scale the number of replicas:
+Secrets are managed via Ansible Vault in `vars/vault.yml`:
+- `nostr_private_key` - Hex or nsec key for signing Kind 30072 events
+- `admin_api_key` - API key for admin endpoints
+- `dragonfly_password` - Password for Dragonfly connection
 
-**Option 1: Via Atlas**
-```bash
-# Edit ~/Atlas/roles/kube/coldforge-discovery/vars/main.yml
-coldforge_discovery_replicas: 3
+## Scaling
 
-# Re-deploy
-atlas kube apply coldforge-discovery --kube-context atlantis
+### Current Architecture: Single Replica
+
+**Important:** The current architecture is designed for single-replica deployment. Background workers would run on ALL replicas, causing:
+
+- **Duplicate relay health checks**
+- **Duplicate NIP-65 crawls**
+- **Duplicate NIP-66 subscriptions**
+- **Duplicate Kind 30072 event publishing** (critical issue)
+
+### Vertical Scaling (Recommended)
+
+For increased load, scale vertically by increasing resource limits:
+
+```yaml
+# In ~/Atlas/roles/kube/coldforge-discovery/defaults/main.yml
+coldforge_discovery_resources:
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
 ```
 
-**Option 2: Via kubectl (temporary)**
+### Horizontal Pod Autoscaler (Future)
+
+HPA requires architectural changes before implementation:
+
+1. **Leader Election** - Only one replica runs background workers
+2. **Work Distribution** - Partition relay URLs across replicas
+3. **Distributed Locking** - Use Redis SETNX for publish deduplication
+
+**Current recommendation:** Keep single replica. The service handles 900+ relays efficiently with minimal resources (100m CPU, 128Mi memory).
+
+### Manual Replica Scaling (Not Recommended)
+
+If you must scale replicas temporarily:
+
 ```bash
-kubectl -n coldforge-discovery scale deployment coldforge-discovery --replicas=3
+# Via kubectl (temporary, will be overwritten on redeploy)
+kubectl -n coldforge-discovery scale deployment coldforge-discovery --replicas=2
 ```
 
-### Resource Limits
-
-Default resource limits:
-- CPU: 100m (request) / 500m (limit)
-- Memory: 128Mi (request) / 512Mi (limit)
-
-To modify, edit `~/Atlas/roles/kube/coldforge-discovery/defaults/main.yml` and re-deploy.
+**Warning:** This WILL cause duplicate publishing of Kind 30072 events.
 
 ## Troubleshooting
 
@@ -234,7 +261,7 @@ kubectl -n coldforge-discovery describe pod <pod-name>
 **Common issues:**
 - **ImagePullBackOff**: Verify image exists in registry
 - **CrashLoopBackOff**: Check logs for startup errors
-- **Pending**: Check node resources and PVC binding
+- **Pending**: Check node resources
 
 ### Cannot Connect to Dragonfly
 
@@ -250,71 +277,35 @@ kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
   sh -c 'nc -zv dragonfly.dragonfly.svc.cluster.local 6379'
 ```
 
-**Check DNS resolution:**
+### Background Workers Not Running
+
+**Check health endpoint:**
 ```bash
-kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
-  nslookup dragonfly.dragonfly.svc.cluster.local
+curl https://discover.cloistr.xyz/health
 ```
 
-### Ingress Not Working
+Look for workers with status "unhealthy" or "initializing".
 
-**Check ingress status:**
+**Check logs for worker errors:**
 ```bash
-kubectl -n coldforge-discovery describe ingress coldforge-discovery
+kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -E "(nip65|nip66|publisher|monitor)"
 ```
 
-**Check TLS certificate:**
+### Publishing Not Working
+
+**Verify publisher is enabled:**
 ```bash
-kubectl -n coldforge-discovery get certificate coldforge-discovery-tls
-kubectl -n coldforge-discovery describe certificate coldforge-discovery-tls
+kubectl -n coldforge-discovery get configmap coldforge-discovery-config -o yaml | grep PUBLISH
 ```
 
-**Check cert-manager logs:**
+**Check for NIP-42 auth issues:**
 ```bash
-kubectl -n cert-manager logs deployment/cert-manager
+kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i auth
 ```
 
-**Verify Traefik is routing correctly:**
+**Verify private key is set:**
 ```bash
-kubectl -n traefik logs deployment/traefik
-```
-
-### High Memory Usage
-
-Check actual memory usage:
-```bash
-kubectl -n coldforge-discovery top pod
-```
-
-If consistently hitting limits, increase memory:
-```yaml
-# In ~/Atlas/roles/kube/coldforge-discovery/defaults/main.yml
-coldforge_discovery_resources:
-  limits:
-    memory: "1Gi"  # Increased from 512Mi
-```
-
-### Relay Monitoring Not Working
-
-**Check logs for relay connection errors:**
-```bash
-kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i error
-```
-
-**Verify relay URLs are reachable:**
-```bash
-# Test from within cluster
-kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
-  curl -v wss://relay.damus.io/
-```
-
-**Check if relays are being added to cache:**
-```bash
-# Port forward to Dragonfly
-kubectl -n dragonfly port-forward svc/dragonfly 6379:6379
-
-# In another terminal, use redis-cli
-redis-cli -h localhost -p 6379 KEYS "relay:*"
+kubectl -n coldforge-discovery get secret coldforge-discovery-secrets -o yaml
 ```
 
 ## Updating the Deployment
@@ -359,8 +350,8 @@ atlas kube apply coldforge-discovery --kube-context atlantis --extra-vars "kube_
 This will remove:
 - All pods
 - Service
-- Ingress
 - ConfigMap
+- Secret
 - Namespace
 
 **Note:** This does NOT remove the cluster-wide Dragonfly instance, as it may be used by other services.
@@ -373,26 +364,26 @@ Metrics are automatically scraped by Prometheus via the ServiceMonitor:
 - Scrape interval: 30s
 - Endpoint: `/metrics`
 
-**View in Prometheus:**
+**Key metrics:**
+```promql
+# Total relays tracked
+discovery_relays_total
+
+# Relays by health status
+discovery_relays_online
+discovery_relays_degraded
+discovery_relays_offline
+
+# Discovery source counts
+discovery_nip65_relays_found
+discovery_nip66_events_received
+
+# Publisher activity
+discovery_publisher_events_published
+discovery_publisher_last_publish_timestamp
 ```
-# Query relay count
-discovery_relays_monitored
-
-# Query cache performance
-rate(discovery_cache_hits[5m])
-rate(discovery_cache_misses[5m])
-
-# Query API request rate
-rate(discovery_http_requests_total[5m])
-```
-
-### Grafana Dashboard
-
-(TODO: Create Grafana dashboard for coldforge-discovery)
 
 ### Logging
-
-Logs are collected by the cluster logging system (if configured).
 
 **View live logs:**
 ```bash
@@ -412,58 +403,21 @@ log_level: debug  # For more verbose logging
 
 ## Security
 
-### Network Policies
+### External Access
 
-(TODO: Add network policies to restrict traffic)
+External access is via Cloudflare Tunnel (`cloistr-tunnel` role), not direct ingress:
+- Domain: `discover.cloistr.xyz`
+- Path-based routing: `/api/*` → backend, `/*` → UI frontend
+- TLS termination at Cloudflare
 
-### Pod Security
+### Admin Authentication
 
-The deployment runs with default security context. Consider adding:
-- Read-only root filesystem
-- Non-root user
-- Drop all capabilities
-
-### TLS
-
-TLS is automatically configured via cert-manager using Let's Encrypt.
-
-**Certificate details:**
-```bash
-kubectl -n coldforge-discovery describe certificate coldforge-discovery-tls
-```
-
-## Performance Tuning
-
-### Replica Scaling
-
-For high-traffic scenarios:
-```yaml
-coldforge_discovery_replicas: 3  # Scale to 3 replicas
-```
-
-### Horizontal Pod Autoscaler
-
-(TODO: Add HPA configuration for automatic scaling based on CPU/memory)
-
-### Cache Configuration
-
-Adjust TTLs based on usage patterns:
-```yaml
-inventory_ttl: 6   # Reduce to 6 hours for more frequent updates
-activity_ttl: 30   # Increase to 30 minutes for less cache churn
-```
+Admin endpoints require authentication:
+- API Key via `X-API-Key` header or `?api_key=` query param
+- Basic auth with configured username/password
 
 ## Related Documentation
 
-- Project Documentation: `/home/forgemaster/Development/coldforge-discovery/CLAUDE.md`
-- Service Documentation: `~/claude/coldforge/services/discovery/CLAUDE.md`
-- NIP Draft: `~/claude/coldforge/research/nip-draft-discovery-protocol.md`
+- [CLAUDE.md](CLAUDE.md) - Full project documentation
+- [README.md](README.md) - Project overview
 - Atlas Role: `~/Atlas/roles/kube/coldforge-discovery/`
-- Kubernetes Manifests: `/home/forgemaster/Development/coldforge-discovery/deploy/k8s/`
-
-## Support
-
-For issues or questions:
-1. Check logs: `kubectl -n coldforge-discovery logs`
-2. Check events: `kubectl -n coldforge-discovery get events`
-3. Review Atlas role configuration: `~/Atlas/roles/kube/coldforge-discovery/`

@@ -9,55 +9,22 @@ The Atlas role is located at:
 ~/Atlas/roles/kube/coldforge-discovery/
 ```
 
-## Changes Made
+## Role Purpose
 
-### 1. Updated Dragonfly Configuration
-
-**Before:**
-- Deployed a dedicated Dragonfly instance in the coldforge-discovery namespace
-- Used local PVC for Dragonfly data
-- Consumed additional cluster resources
-
-**After:**
-- Uses cluster-wide Dragonfly instance at `dragonfly.dragonfly.svc.cluster.local:6379`
-- No local Dragonfly deployment
-- Shared caching infrastructure across services
-- High availability with 3 replicas and automatic failover
-
-**Files Modified:**
-- `defaults/main.yml` - Removed Dragonfly deployment vars, added connection vars
-- `tasks/shared_task_file.yml` - Removed PVC, Deployment, and Service tasks for Dragonfly
-- `tasks/shared_task_file.yml` - Updated ConfigMap to use cluster-wide Dragonfly host
-
-### 2. Updated Domain Configuration
-
-**Before:**
-- Domain: `discover.cloistr.xyz`
-- Ingress disabled by default
-
-**After:**
-- Domain: `discover.cloistr.xyz`
-- Ingress enabled by default
-
-**Files Modified:**
-- `defaults/main.yml` - Changed `discovery_domain` and set `ingress_enabled: true`
-- `vars/main.yml` - Updated domain to coldforge.xyz
-
-### 3. Updated Documentation
-
-**Files Modified:**
-- `README.md` - Updated architecture diagram, removed local Dragonfly references
-- `tasks/main.yml` - Updated deployment success message
+Deploys the Nostr Relay Discovery Service which:
+- Monitors relay health via NIP-11
+- Discovers relays from NIP-65 lists and NIP-66 events
+- Publishes Kind 30072 (Relay Directory Entry) events
 
 ## Atlas Role Structure
 
 ```
 ~/Atlas/roles/kube/coldforge-discovery/
-├── README.md                    # Role documentation
 ├── defaults/
 │   └── main.yml                 # Default configuration variables
 ├── vars/
-│   └── main.yml                 # Production overrides
+│   ├── main.yml                 # Production overrides
+│   └── vault.yml                # Secrets (encrypted)
 └── tasks/
     ├── main.yml                 # Main orchestration task
     └── shared_task_file.yml     # Kubernetes manifest definitions
@@ -76,6 +43,7 @@ discovery_port: 8080
 coldforge_discovery_replicas: 1
 
 # Image (set by CI/CD)
+coldforge_discovery_image: registry.coldforge.xyz/coldforge/coldforge-discovery
 coldforge_discovery_image_tag: latest
 
 # Resources
@@ -100,38 +68,38 @@ seed_relays:
   - wss://relay.cloistr.xyz
 relay_check_interval: 300
 nip11_timeout: 10
-inventory_ttl: 12
-activity_ttl: 15
-publish_relay: wss://relay.cloistr.xyz
 log_level: info
 
-# Ingress
-ingress_enabled: true
-ingress_class: traefik
-cert_issuer: letsencrypt-production
+# Publishing Configuration
+publish_enabled: true
+publish_relays:
+  - wss://relay.cloistr.xyz
+publish_interval: 10
+
+# Discovery Sources
+nip65_crawl_enabled: true
+nip65_crawl_interval: 30
+nip66_enabled: true
+peer_discovery_enabled: true
+
+# Admin Interface
+admin_enabled: true
+
+# External Access (via Cloudflare Tunnel)
+ingress_enabled: false
 discovery_domain: discover.cloistr.xyz
 
 # Kubernetes State
 kube_state: present
 ```
 
-### vars/main.yml
+### vars/vault.yml (encrypted)
 
 ```yaml
-# Production overrides
-discovery_domain: discover.cloistr.xyz
-
-seed_relays:
-  - wss://relay.cloistr.xyz
-  - wss://relay.damus.io
-  - wss://nos.lol
-  - wss://relay.nostr.band
-  - wss://relay.snort.social
-  - wss://relay.primal.net
-  - wss://purplepag.es
-
-publish_relay: wss://relay.cloistr.xyz
-log_level: info
+# Secrets for signing Kind 30072 events and admin access
+nostr_private_key: <encrypted>
+admin_api_key: <encrypted>
+dragonfly_password: <encrypted>
 ```
 
 ## Kubernetes Resources Deployed
@@ -139,10 +107,10 @@ log_level: info
 | Resource Type | Name | Namespace | Purpose |
 |--------------|------|-----------|---------|
 | Namespace | coldforge-discovery | - | Service isolation |
+| Secret | coldforge-discovery-secrets | coldforge-discovery | Private keys, API keys |
 | ConfigMap | coldforge-discovery-config | coldforge-discovery | Environment variables |
 | Deployment | coldforge-discovery | coldforge-discovery | Main application |
 | Service | coldforge-discovery | coldforge-discovery | Internal networking |
-| Ingress | coldforge-discovery | coldforge-discovery | External access |
 | ServiceMonitor | coldforge-discovery | coldforge-discovery | Prometheus metrics |
 
 ## Deployment Architecture
@@ -154,9 +122,9 @@ log_level: info
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│              Traefik Ingress Controller                 │
-│            (discover.cloistr.xyz)                    │
-│                 TLS via cert-manager                    │
+│              Cloudflare Tunnel                          │
+│            (discover.cloistr.xyz)                       │
+│     Path-based routing: /api/* → backend                │
 └────────────────────┬────────────────────────────────────┘
                      │
                      ▼
@@ -167,6 +135,7 @@ log_level: info
 │  │  Deployment: coldforge-discovery         │           │
 │  │  ├─ Container: discovery (port 8080)     │           │
 │  │  ├─ ConfigMap: environment variables     │           │
+│  │  ├─ Secret: NOSTR_PRIVATE_KEY, API_KEY   │           │
 │  │  ├─ Resources: 100m CPU / 128Mi RAM      │           │
 │  │  ├─ Liveness probe: /health              │           │
 │  │  └─ Readiness probe: /health             │           │
@@ -194,9 +163,8 @@ log_level: info
 │                                                         │
 │  ┌──────────────────────────────────────────┐           │
 │  │  Dragonfly Cluster                       │           │
-│  │  ├─ Replicas: 3 (HA)                     │           │
-│  │  ├─ Operator-managed failover            │           │
 │  │  ├─ Redis-compatible API                 │           │
+│  │  ├─ Authenticated access                 │           │
 │  │  └─ Service: dragonfly:6379              │           │
 │  └──────────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────────┘
@@ -208,15 +176,18 @@ log_level: info
 |----------|-------|---------|
 | DISCOVERY_PORT | 8080 | HTTP server port |
 | LOG_LEVEL | info | Logging verbosity |
-| CACHE_URL | redis://dragonfly.dragonfly.svc.cluster.local:6379 | Dragonfly connection |
+| CACHE_URL | redis://...:6379 | Dragonfly connection |
 | SEED_RELAYS | (comma-separated URLs) | Initial relays to monitor |
 | RELAY_CHECK_INTERVAL | 300 | Health check interval (seconds) |
 | NIP11_TIMEOUT | 10 | NIP-11 fetch timeout (seconds) |
-| INVENTORY_TTL | 12 | Inventory cache TTL (hours) |
-| ACTIVITY_TTL | 15 | Activity cache TTL (minutes) |
-| PUBLISH_RELAY | wss://relay.cloistr.xyz | NDP event publishing target |
+| PUBLISH_ENABLED | true | Enable Kind 30072 publishing |
+| PUBLISH_RELAYS | (comma-separated) | Relays to publish to |
+| PUBLISH_INTERVAL | 10 | Minutes between publish cycles |
+| NIP65_CRAWL_ENABLED | true | Enable NIP-65 discovery |
+| NIP66_ENABLED | true | Consume NIP-66 events |
+| ADMIN_ENABLED | true | Enable admin endpoints |
 
-## Deployment Command
+## Deployment Commands
 
 ```bash
 # Deploy
@@ -263,64 +234,23 @@ Before deploying coldforge-discovery, ensure:
 
 2. **Docker image is available in registry** (built automatically by CI/CD on merge to main)
 
-3. **DNS is configured:**
-   - `discover.cloistr.xyz` points to cluster ingress
+3. **Cloudflare Tunnel is configured:**
+   - `cloistr-tunnel` role deployed
+   - `discover.cloistr.xyz` configured for path-based routing
 
 4. **Cluster components are ready:**
-   - Traefik ingress controller
-   - cert-manager for TLS
    - Prometheus operator (for ServiceMonitor)
 
-## Related Files in Project
+## Scaling Considerations
 
-```
-coldforge-discovery/
-├── CLAUDE.md                    # Project documentation (updated)
-├── DEPLOYMENT.md                # Full deployment guide (new)
-├── deploy/
-│   ├── QUICK-START.md           # Quick reference (new)
-│   ├── ATLAS-ROLE-SUMMARY.md    # This file (new)
-│   └── k8s/                     # Reference manifests (new)
-│       ├── README.md
-│       ├── namespace.yaml
-│       ├── configmap.yaml
-│       ├── deployment.yaml
-│       ├── service.yaml
-│       ├── ingress.yaml
-│       └── servicemonitor.yaml
-```
+**Important:** Current architecture is single-replica only.
 
-## Why Use Atlas?
+Background workers (relay monitor, NIP-65 crawler, NIP-66 consumer, publisher) run on ALL replicas, which would cause:
+- Duplicate relay health checks
+- Duplicate NIP-65 crawls
+- Duplicate Kind 30072 event publishing
 
-The Atlas role provides:
-- **Idempotency** - Safe to run multiple times
-- **Version control** - Configuration tracked in git
-- **Repeatability** - Consistent deployments
-- **Rollback** - Easy to revert changes
-- **Documentation** - Self-documenting infrastructure
-
-**Do NOT use ad hoc kubectl commands for production changes!**
-
-## Customization
-
-To customize the deployment:
-
-1. **Edit configuration:**
-   ```bash
-   vim ~/Atlas/roles/kube/coldforge-discovery/vars/main.yml
-   ```
-
-2. **Common customizations:**
-   - Change replica count
-   - Modify resource limits
-   - Add/remove seed relays
-   - Adjust TTL values
-   - Change log level
-
-3. **Apply changes:**
-   ```bash
-   atlas kube apply coldforge-discovery --kube-context atlantis
-   ```
+See DEPLOYMENT.md for requirements to enable horizontal scaling.
 
 ## Monitoring
 
@@ -333,20 +263,33 @@ Metrics are automatically scraped by Prometheus:
 
 ### Key Metrics
 
-- `discovery_relays_monitored` - Number of relays being tracked
-- `discovery_cache_hits` - Cache hit rate
-- `discovery_cache_misses` - Cache miss rate
-- `discovery_http_requests_total` - API request count
-- `discovery_relay_health_checks` - Health check statistics
+- `discovery_relays_total` - Total relays tracked
+- `discovery_relays_online` - Online relay count
+- `discovery_nip65_relays_found` - Relays discovered via NIP-65
+- `discovery_publisher_events_published` - Kind 30072 events published
 
-### Grafana
+## Customization
 
-(TODO: Create Grafana dashboard for coldforge-discovery metrics)
+To customize the deployment:
 
-## Support
+1. **Edit configuration:**
+   ```bash
+   vim ~/Atlas/roles/kube/coldforge-discovery/vars/main.yml
+   ```
 
-For issues or questions:
-1. Check logs: `kubectl -n coldforge-discovery logs`
-2. Check events: `kubectl -n coldforge-discovery get events`
-3. Review Atlas role: `~/Atlas/roles/kube/coldforge-discovery/`
-4. Consult DEPLOYMENT.md for troubleshooting steps
+2. **Common customizations:**
+   - Modify resource limits
+   - Add/remove seed relays
+   - Adjust check intervals
+   - Change log level
+
+3. **Apply changes:**
+   ```bash
+   atlas kube apply coldforge-discovery --kube-context atlantis
+   ```
+
+## Related Documentation
+
+- [CLAUDE.md](../../CLAUDE.md) - Project documentation
+- [DEPLOYMENT.md](../../DEPLOYMENT.md) - Full deployment guide
+- [README.md](../../README.md) - Project overview

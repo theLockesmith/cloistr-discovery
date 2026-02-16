@@ -1008,6 +1008,379 @@ func TestDiscoveryDeduplication(t *testing.T) {
 	})
 }
 
+// TTL Expiration Tests
+
+func TestRelayEntryTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &RelayEntry{
+		URL:    "wss://ttl-test.example.com",
+		Name:   "TTL Test Relay",
+		Health: "online",
+	}
+
+	ttl := 10 * time.Second
+
+	err := client.SetRelayEntry(ctx, entry, ttl)
+	if err != nil {
+		t.Fatalf("SetRelayEntry() error: %v", err)
+	}
+
+	// Verify entry exists
+	retrieved, err := client.GetRelayEntry(ctx, entry.URL)
+	if err != nil {
+		t.Fatalf("GetRelayEntry() error: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("GetRelayEntry() returned nil before TTL expiry")
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(11 * time.Second)
+
+	// Verify entry is expired
+	retrieved, err = client.GetRelayEntry(ctx, entry.URL)
+	if err != nil {
+		t.Fatalf("GetRelayEntry() error after TTL: %v", err)
+	}
+	if retrieved != nil {
+		t.Error("GetRelayEntry() should return nil after TTL expiry")
+	}
+}
+
+func TestHealthKeyTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &RelayEntry{
+		URL:    "wss://health-ttl-test.example.com",
+		Name:   "Health TTL Test",
+		Health: "online",
+	}
+
+	// Set with a long TTL for the main entry
+	err := client.SetRelayEntry(ctx, entry, time.Hour)
+	if err != nil {
+		t.Fatalf("SetRelayEntry() error: %v", err)
+	}
+
+	// Verify health key exists
+	healthKey := "relay:health:" + entry.URL
+	health, err := client.rdb.Get(ctx, healthKey).Result()
+	if err != nil {
+		t.Fatalf("Get health key error: %v", err)
+	}
+	if health != "online" {
+		t.Errorf("health = %v, want online", health)
+	}
+
+	// Health key has 5 minute TTL, fast forward past that
+	mr.FastForward(6 * time.Minute)
+
+	// Health key should be expired
+	_, err = client.rdb.Get(ctx, healthKey).Result()
+	if err == nil {
+		t.Error("health key should be expired after 5 minutes")
+	}
+
+	// Main entry should still exist (1 hour TTL)
+	retrieved, err := client.GetRelayEntry(ctx, entry.URL)
+	if err != nil {
+		t.Fatalf("GetRelayEntry() error: %v", err)
+	}
+	if retrieved == nil {
+		t.Error("main relay entry should still exist")
+	}
+}
+
+func TestNIPIndexTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &RelayEntry{
+		URL:           "wss://nip-ttl-test.example.com",
+		Name:          "NIP TTL Test",
+		Health:        "online",
+		SupportedNIPs: []int{1, 11, 42},
+	}
+
+	ttl := 30 * time.Second
+
+	err := client.SetRelayEntry(ctx, entry, ttl)
+	if err != nil {
+		t.Fatalf("SetRelayEntry() error: %v", err)
+	}
+
+	// Verify NIP index contains the relay
+	relays, err := client.GetRelaysByNIP(ctx, 42)
+	if err != nil {
+		t.Fatalf("GetRelaysByNIP() error: %v", err)
+	}
+	if len(relays) != 1 {
+		t.Errorf("GetRelaysByNIP() returned %d relays, want 1", len(relays))
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(31 * time.Second)
+
+	// NIP index should be empty after expiration
+	relays, err = client.GetRelaysByNIP(ctx, 42)
+	if err != nil {
+		t.Fatalf("GetRelaysByNIP() error after TTL: %v", err)
+	}
+	if len(relays) != 0 {
+		t.Errorf("GetRelaysByNIP() returned %d relays after TTL, want 0", len(relays))
+	}
+}
+
+func TestLocationIndexTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &RelayEntry{
+		URL:         "wss://location-ttl-test.example.com",
+		Name:        "Location TTL Test",
+		Health:      "online",
+		CountryCode: "US",
+	}
+
+	ttl := 20 * time.Second
+
+	err := client.SetRelayEntry(ctx, entry, ttl)
+	if err != nil {
+		t.Fatalf("SetRelayEntry() error: %v", err)
+	}
+
+	// Verify location index contains the relay
+	relays, err := client.GetRelaysByLocation(ctx, "US")
+	if err != nil {
+		t.Fatalf("GetRelaysByLocation() error: %v", err)
+	}
+	if len(relays) != 1 {
+		t.Errorf("GetRelaysByLocation() returned %d relays, want 1", len(relays))
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(21 * time.Second)
+
+	// Location index should be empty after expiration
+	relays, err = client.GetRelaysByLocation(ctx, "US")
+	if err != nil {
+		t.Fatalf("GetRelaysByLocation() error after TTL: %v", err)
+	}
+	if len(relays) != 0 {
+		t.Errorf("GetRelaysByLocation() returned %d relays after TTL, want 0", len(relays))
+	}
+}
+
+func TestActivityTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	now := time.Now()
+	activity := &Activity{
+		Pubkey:    "ttl-test-pubkey",
+		Type:      "streaming",
+		Details:   "Test stream",
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Minute),
+	}
+
+	ttl := 15 * time.Second
+
+	err := client.SetActivity(ctx, activity, ttl)
+	if err != nil {
+		t.Fatalf("SetActivity() error: %v", err)
+	}
+
+	// Verify activity exists
+	retrieved, err := client.GetActivity(ctx, activity.Pubkey)
+	if err != nil {
+		t.Fatalf("GetActivity() error: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("GetActivity() returned nil before TTL expiry")
+	}
+
+	// Verify in active streams
+	streams, err := client.GetActiveStreams(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveStreams() error: %v", err)
+	}
+	found := false
+	for _, pk := range streams {
+		if pk == activity.Pubkey {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("activity should be in active streams before TTL expiry")
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(16 * time.Second)
+
+	// Activity should be expired
+	retrieved, err = client.GetActivity(ctx, activity.Pubkey)
+	if err != nil {
+		t.Fatalf("GetActivity() error after TTL: %v", err)
+	}
+	if retrieved != nil {
+		t.Error("GetActivity() should return nil after TTL expiry")
+	}
+
+	// Active streams set should also expire (has same TTL)
+	streams, err = client.GetActiveStreams(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveStreams() error after TTL: %v", err)
+	}
+	for _, pk := range streams {
+		if pk == activity.Pubkey {
+			t.Error("activity should not be in active streams after TTL expiry")
+		}
+	}
+}
+
+func TestPubkeyRelayTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	pubkey := "ttl-test-pk"
+	relay := "wss://relay-ttl.example.com"
+	ttl := 10 * time.Second
+
+	err := client.SetPubkeyRelay(ctx, pubkey, relay, ttl)
+	if err != nil {
+		t.Fatalf("SetPubkeyRelay() error: %v", err)
+	}
+
+	// Verify relay exists
+	relays, err := client.GetPubkeyRelays(ctx, pubkey)
+	if err != nil {
+		t.Fatalf("GetPubkeyRelays() error: %v", err)
+	}
+	if len(relays) != 1 {
+		t.Errorf("GetPubkeyRelays() returned %d relays, want 1", len(relays))
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(11 * time.Second)
+
+	// Pubkey relays should be empty after expiration
+	relays, err = client.GetPubkeyRelays(ctx, pubkey)
+	if err != nil {
+		t.Fatalf("GetPubkeyRelays() error after TTL: %v", err)
+	}
+	if len(relays) != 0 {
+		t.Errorf("GetPubkeyRelays() returned %d relays after TTL, want 0", len(relays))
+	}
+
+	// Inventory marker should also be expired
+	invKey := "inventory:" + relay + ":" + pubkey
+	_, err = client.rdb.Get(ctx, invKey).Result()
+	if err == nil {
+		t.Error("inventory marker should be expired after TTL")
+	}
+}
+
+func TestModerationIndexTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &RelayEntry{
+		URL:        "wss://moderation-ttl.example.com",
+		Name:       "Moderation TTL Test",
+		Health:     "online",
+		Moderation: "strict",
+	}
+
+	ttl := 15 * time.Second
+
+	err := client.SetRelayEntry(ctx, entry, ttl)
+	if err != nil {
+		t.Fatalf("SetRelayEntry() error: %v", err)
+	}
+
+	// Verify index contains the relay
+	relays, err := client.GetRelaysByModeration(ctx, "strict")
+	if err != nil {
+		t.Fatalf("GetRelaysByModeration() error: %v", err)
+	}
+	if len(relays) != 1 {
+		t.Errorf("GetRelaysByModeration() returned %d relays, want 1", len(relays))
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(16 * time.Second)
+
+	// Index should be empty after expiration
+	relays, err = client.GetRelaysByModeration(ctx, "strict")
+	if err != nil {
+		t.Fatalf("GetRelaysByModeration() error after TTL: %v", err)
+	}
+	if len(relays) != 0 {
+		t.Errorf("GetRelaysByModeration() returned %d relays after TTL, want 0", len(relays))
+	}
+}
+
+func TestContentPolicyIndexTTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &RelayEntry{
+		URL:           "wss://content-policy-ttl.example.com",
+		Name:          "Content Policy TTL Test",
+		Health:        "online",
+		ContentPolicy: "sfw",
+	}
+
+	ttl := 15 * time.Second
+
+	err := client.SetRelayEntry(ctx, entry, ttl)
+	if err != nil {
+		t.Fatalf("SetRelayEntry() error: %v", err)
+	}
+
+	// Verify index contains the relay
+	relays, err := client.GetRelaysByContentPolicy(ctx, "sfw")
+	if err != nil {
+		t.Fatalf("GetRelaysByContentPolicy() error: %v", err)
+	}
+	if len(relays) != 1 {
+		t.Errorf("GetRelaysByContentPolicy() returned %d relays, want 1", len(relays))
+	}
+
+	// Fast forward past TTL
+	mr.FastForward(16 * time.Second)
+
+	// Index should be empty after expiration
+	relays, err = client.GetRelaysByContentPolicy(ctx, "sfw")
+	if err != nil {
+		t.Fatalf("GetRelaysByContentPolicy() error after TTL: %v", err)
+	}
+	if len(relays) != 0 {
+		t.Errorf("GetRelaysByContentPolicy() returned %d relays after TTL, want 0", len(relays))
+	}
+}
+
 func TestStats(t *testing.T) {
 	client, _ := setupTestCache(t)
 	defer client.Close()

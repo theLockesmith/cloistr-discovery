@@ -6,7 +6,7 @@ Use this checklist when deploying coldforge-discovery to production (Atlantis cl
 
 ### 1. Code Ready
 - [ ] All code changes committed
-- [ ] Unit tests passing (`make test`)
+- [ ] Unit tests passing (`make test` - 357 tests)
 - [ ] Code reviewed
 - [ ] Docker Compose local testing completed
 
@@ -18,7 +18,7 @@ Use this checklist when deploying coldforge-discovery to production (Atlantis cl
   ```bash
   kubectl get namespace dragonfly
   ```
-- [ ] Dragonfly pods running (3 replicas)
+- [ ] Dragonfly pods running
   ```bash
   kubectl -n dragonfly get pods
   ```
@@ -39,28 +39,13 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 ```
 
 ### 4. Cluster Prerequisites
-- [ ] Traefik ingress controller running
-  ```bash
-  kubectl -n traefik get pods
-  ```
-- [ ] cert-manager installed
-  ```bash
-  kubectl -n cert-manager get pods
-  ```
 - [ ] Prometheus operator installed (for ServiceMonitor)
   ```bash
   kubectl -n monitoring get prometheus
   ```
+- [ ] Cloudflare Tunnel configured (`cloistr-tunnel` role)
 
-### 5. DNS Configuration
-- [ ] DNS record created for `discover.cloistr.xyz`
-- [ ] Points to cluster ingress IP/CNAME
-- [ ] DNS propagation verified
-  ```bash
-  dig discover.cloistr.xyz
-  ```
-
-### 6. Atlas Role Configuration
+### 5. Atlas Role Configuration
 - [ ] Review defaults/main.yml
   ```bash
   cat ~/Atlas/roles/kube/coldforge-discovery/defaults/main.yml
@@ -72,6 +57,12 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 - [ ] Verify seed relays are correct
 - [ ] Verify domain is `discover.cloistr.xyz`
 - [ ] Verify Dragonfly host is `dragonfly.dragonfly.svc.cluster.local`
+
+### 6. Secrets Configuration
+- [ ] Vault secrets configured in `vars/vault.yml`
+  - `nostr_private_key` - For signing Kind 30072 events
+  - `admin_api_key` - For admin endpoints
+  - `dragonfly_password` - For cache authentication
 
 ## Deployment
 
@@ -121,6 +112,9 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 - [ ] HTTP server started on port 8080
 - [ ] Relay monitoring initialized
 - [ ] Seed relays being contacted
+- [ ] NIP-65 crawler started (if enabled)
+- [ ] NIP-66 consumer connected (if enabled)
+- [ ] Publisher started (if enabled)
 
 ## Post-Deployment Verification
 
@@ -134,78 +128,56 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
   curl http://localhost:8080/health
   ```
 - [ ] Response is 200 OK
-- [ ] Response shows healthy status
+- [ ] Response shows healthy status with workers
   ```json
   {
     "status": "healthy",
-    "cache": "connected",
-    "relays_monitored": 7
+    "workers": {
+      "relay-monitor": {"status": "healthy"},
+      "nip65-crawler": {"status": "healthy"},
+      "publisher": {"status": "healthy"}
+    }
   }
   ```
 
-### 12. Ingress Configuration
-- [ ] Ingress resource created
-  ```bash
-  kubectl -n coldforge-discovery get ingress coldforge-discovery
-  ```
-- [ ] Ingress has IP/host assigned
-- [ ] TLS configuration present
-
-### 13. TLS Certificate
-- [ ] Certificate resource created
-  ```bash
-  kubectl -n coldforge-discovery get certificate coldforge-discovery-tls
-  ```
-- [ ] Certificate status is Ready
-  ```bash
-  kubectl -n coldforge-discovery describe certificate coldforge-discovery-tls
-  ```
-- [ ] No errors in cert-manager logs
-  ```bash
-  kubectl -n cert-manager logs deployment/cert-manager | grep -i coldforge-discovery
-  ```
-- [ ] Wait for certificate issuance (1-2 minutes)
-
-### 14. External Access - Health Endpoint
-- [ ] Access via HTTPS
+### 12. External Access
+- [ ] Access via Cloudflare Tunnel
   ```bash
   curl https://discover.cloistr.xyz/health
   ```
 - [ ] Returns 200 OK
 - [ ] Response shows healthy status
-- [ ] TLS certificate valid (no warnings)
-  ```bash
-  curl -v https://discover.cloistr.xyz/health 2>&1 | grep -i "subject\|issuer"
-  ```
+- [ ] TLS certificate valid (Cloudflare)
 
-### 15. API Endpoints
+### 13. API Endpoints
 - [ ] List relays endpoint works
   ```bash
   curl https://discover.cloistr.xyz/api/v1/relays | jq .
   ```
-- [ ] Returns JSON array
+- [ ] Returns JSON with relay array
 - [ ] Contains monitored relays
-- [ ] Pubkey query endpoint works
+- [ ] Filter endpoints work
   ```bash
-  curl "https://discover.cloistr.xyz/api/v1/pubkey/$(openssl rand -hex 32)/relays" | jq .
+  curl 'https://discover.cloistr.xyz/api/v1/relays?health=online' | jq .
   ```
-- [ ] Activity streams endpoint works
+- [ ] Get relay endpoint works
   ```bash
-  curl https://discover.cloistr.xyz/api/v1/activity/streams | jq .
+  curl 'https://discover.cloistr.xyz/api/v1/relay/wss%3A%2F%2Frelay.damus.io' | jq .
   ```
 
-### 16. Prometheus Metrics
+### 14. Prometheus Metrics
 - [ ] Metrics endpoint accessible
   ```bash
   curl https://discover.cloistr.xyz/metrics
   ```
 - [ ] Returns Prometheus format metrics
 - [ ] Contains coldforge-discovery specific metrics:
-  - `discovery_relays_monitored`
-  - `discovery_cache_hits`
-  - `discovery_http_requests_total`
+  - `discovery_relays_total`
+  - `discovery_relays_online`
+  - `discovery_nip65_relays_found`
+  - `discovery_publisher_events_published`
 
-### 17. ServiceMonitor
+### 15. ServiceMonitor
 - [ ] ServiceMonitor created
   ```bash
   kubectl -n coldforge-discovery get servicemonitor coldforge-discovery
@@ -213,7 +185,7 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 - [ ] Prometheus scraping metrics (check Prometheus UI)
 - [ ] No scrape errors in Prometheus
 
-### 18. Dragonfly Connection
+### 16. Dragonfly Connection
 - [ ] Verify from pod
   ```bash
   kubectl -n coldforge-discovery exec -it deployment/coldforge-discovery -- \
@@ -225,10 +197,9 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
   kubectl -n dragonfly port-forward svc/dragonfly 6379:6379
   # In another terminal:
   redis-cli -h localhost -p 6379 KEYS "relay:*"
-  redis-cli -h localhost -p 6379 KEYS "inventory:*"
   ```
 
-### 19. Resource Usage
+### 17. Resource Usage
 - [ ] Check CPU/memory usage
   ```bash
   kubectl -n coldforge-discovery top pod
@@ -236,7 +207,7 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 - [ ] Within expected limits (< 500m CPU, < 512Mi memory)
 - [ ] No resource throttling
 
-### 20. Events and Errors
+### 18. Events and Errors
 - [ ] Check events for issues
   ```bash
   kubectl -n coldforge-discovery get events --sort-by='.lastTimestamp'
@@ -246,99 +217,88 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 
 ## Monitoring Setup
 
-### 21. Prometheus
+### 19. Prometheus
 - [ ] Service discovered by Prometheus
 - [ ] Metrics being scraped (check Prometheus targets)
 - [ ] Query test metrics:
   ```promql
-  discovery_relays_monitored
-  rate(discovery_http_requests_total[5m])
+  discovery_relays_total
+  discovery_relays_online
+  rate(discovery_publisher_events_published[5m])
   ```
 
-### 22. Grafana (Optional)
-- [ ] Import coldforge-discovery dashboard (if available)
-- [ ] Verify panels showing data
-- [ ] Set up alerts if needed
-
-### 23. Logging
+### 20. Logging
 - [ ] Verify logs in cluster logging system (if configured)
-- [ ] Set up log aggregation (if needed)
-- [ ] Configure log retention policy
+- [ ] Set log level appropriately (info for production)
 
 ## Functional Testing
 
-### 24. NDP Protocol Testing
+### 21. Background Workers
 - [ ] Relay monitoring functioning
   ```bash
-  # Check logs for relay health checks
-  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "relay"
+  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "checking relay"
   ```
-- [ ] Inventory indexing working
+- [ ] NIP-65 crawling working (if enabled)
   ```bash
-  # Check for inventory events in logs
-  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "inventory"
+  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "nip65"
   ```
-- [ ] Activity tracking operational
+- [ ] NIP-66 consuming events (if enabled)
   ```bash
-  # Check for activity events
-  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "activity"
+  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "nip66"
+  ```
+- [ ] Publisher running (if enabled)
+  ```bash
+  kubectl -n coldforge-discovery logs -l app.kubernetes.io/name=coldforge-discovery | grep -i "publish"
   ```
 
-### 25. Cache Performance
+### 22. Kind 30072 Publishing
+- [ ] Publisher connected to target relays
+- [ ] Events being published
+- [ ] NIP-42 auth working (if relay requires it)
+
+### 23. Cache Performance
 - [ ] Verify cache hit/miss rates in metrics
   ```bash
   curl https://discover.cloistr.xyz/metrics | grep cache
   ```
-- [ ] Check TTL behavior (inventories: 12h, activities: 15m)
 - [ ] Monitor cache memory usage in Dragonfly
 
-### 26. API Performance
+### 24. API Performance
 - [ ] Test API response times
   ```bash
   time curl https://discover.cloistr.xyz/api/v1/relays
   ```
 - [ ] Should be < 1 second for typical queries
 - [ ] Test with different query parameters
-- [ ] Verify pagination (if implemented)
 
 ## Documentation
 
-### 27. Update Documentation
-- [ ] Update deployment date in CLAUDE.md
+### 25. Update Documentation
 - [ ] Note any configuration changes made
 - [ ] Document any issues encountered and resolutions
 - [ ] Update runbook if needed
 
-### 28. Team Communication
-- [ ] Notify team of deployment
-- [ ] Share access URLs:
-  - API: https://discover.cloistr.xyz/api/v1/
-  - Health: https://discover.cloistr.xyz/health
-  - Metrics: https://discover.cloistr.xyz/metrics
-- [ ] Document any changes to standard procedures
-
 ## Rollback Plan (If Needed)
 
-### 29. Rollback Procedure
+### 26. Rollback Procedure
 **Only if deployment has critical issues:**
 
 - [ ] Identify issue severity
 - [ ] Determine if rollback necessary
 - [ ] Execute rollback:
   ```bash
-  # If deployment failed, remove it
-  atlas kube apply coldforge-discovery --kube-context atlantis --extra-vars "kube_state=absent"
+  # Rollback to previous revision
+  kubectl -n coldforge-discovery rollout undo deployment/coldforge-discovery
 
-  # If need to rollback to previous image version
-  # Update image tag in ~/Atlas/roles/kube/coldforge-discovery/defaults/main.yml
-  # Then re-deploy with previous version
+  # Or remove entirely
+  atlas kube apply coldforge-discovery --kube-context atlantis --extra-vars "kube_state=absent"
   ```
 - [ ] Verify rollback successful
 - [ ] Document rollback reason and issue
 
 ## Post-Deployment Monitoring
 
-### 30. First 24 Hours
+### 27. First 24 Hours
 - [ ] Monitor pod stability (no crashes/restarts)
 - [ ] Monitor resource usage trends
 - [ ] Monitor error rates in logs
@@ -346,20 +306,12 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 - [ ] Monitor API response times
 - [ ] Check for any unexpected behavior
 
-### 31. First Week
+### 28. First Week
 - [ ] Review Prometheus metrics
 - [ ] Check for memory leaks
 - [ ] Verify relay health checks occurring regularly
-- [ ] Verify inventory updates happening
-- [ ] Monitor activity stream performance
+- [ ] Monitor publisher activity
 - [ ] Review logs for patterns
-
-### 32. Optimization (If Needed)
-- [ ] Adjust resource limits if needed
-- [ ] Tune cache TTLs if needed
-- [ ] Adjust health check intervals if needed
-- [ ] Scale replicas if needed
-- [ ] Consider HPA if traffic varies
 
 ## Sign-Off
 
@@ -378,8 +330,6 @@ kubectl -n dragonfly wait --for=condition=ready pod -l app.kubernetes.io/name=dr
 **Ready for production traffic:** [ ] Yes [ ] No
 
 **Notes:**
-_______________________________________________
-_______________________________________________
 _______________________________________________
 _______________________________________________
 
@@ -406,11 +356,6 @@ curl https://discover.cloistr.xyz/metrics
 kubectl -n coldforge-discovery describe pod <pod-name>
 kubectl -n coldforge-discovery get events --sort-by='.lastTimestamp'
 kubectl -n coldforge-discovery logs <pod-name> --previous
-```
-
-### Scale
-```bash
-kubectl -n coldforge-discovery scale deployment coldforge-discovery --replicas=3
 ```
 
 ### Remove

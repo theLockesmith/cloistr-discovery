@@ -21,6 +21,7 @@ import (
 	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
 	"gitlab.com/coldforge/coldforge-discovery/internal/config"
 	"gitlab.com/coldforge/coldforge-discovery/internal/discovery"
+	"gitlab.com/coldforge/coldforge-discovery/internal/health"
 	"gitlab.com/coldforge/coldforge-discovery/internal/publisher"
 	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
 )
@@ -73,12 +74,12 @@ func main() {
 	// Initialize API server
 	apiServer := api.New(cfg, cacheClient)
 
+	// Initialize health registry
+	healthRegistry := health.NewRegistry()
+
 	// HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	mux.HandleFunc("/health", healthRegistry.Handler())
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
 
@@ -109,12 +110,36 @@ func main() {
 		relayMonitor.Start(bgCtx)
 	}()
 
+	// Register relay monitor with health registry
+	healthRegistry.Register(&health.Worker{
+		Name:             "relay-monitor",
+		Check:            relayMonitor.LastCheck,
+		ExpectedInterval: time.Duration(cfg.RelayCheckInterval) * time.Second,
+	})
+
 	// Start discovery coordinator goroutine
 	discoveryCoordinator := discovery.NewCoordinator(cfg, cacheClient, relayMonitor.DiscoveryChannel())
 	go func() {
 		slog.Info("starting discovery coordinator")
 		discoveryCoordinator.Start(bgCtx)
 	}()
+
+	// Register discovery sources with health registry
+	if discoveryCoordinator.IsNIP65Enabled() {
+		healthRegistry.Register(&health.Worker{
+			Name:             "nip65-crawler",
+			Check:            discoveryCoordinator.NIP65LastCrawl,
+			ExpectedInterval: time.Duration(cfg.NIP65CrawlInterval) * time.Minute,
+		})
+	}
+	if discoveryCoordinator.IsNIP66Enabled() {
+		healthRegistry.Register(&health.Worker{
+			Name:             "nip66-consumer",
+			Check:            discoveryCoordinator.NIP66LastConsume,
+			ExpectedInterval: 10 * time.Minute, // NIP-66 should receive events frequently
+			GracePeriod:      20 * time.Minute, // Allow extra grace for sparse events
+		})
+	}
 
 	// Start publisher goroutine (if enabled)
 	var eventPublisher *publisher.Publisher
@@ -128,6 +153,13 @@ func main() {
 				slog.Info("starting event publisher")
 				eventPublisher.Start(bgCtx)
 			}()
+
+			// Register publisher with health registry
+			healthRegistry.Register(&health.Worker{
+				Name:             "publisher",
+				Check:            eventPublisher.GetLastPublish,
+				ExpectedInterval: time.Duration(cfg.PublishInterval) * time.Minute,
+			})
 		}
 	}
 
