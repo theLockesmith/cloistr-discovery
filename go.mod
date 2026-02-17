@@ -1,4 +1,4 @@
-module gitlab.com/coldforge/coldforge-discovery
+module git.coldforge.xyz/coldforge/cloistr-discovery
 
 go 1.24.1
 
