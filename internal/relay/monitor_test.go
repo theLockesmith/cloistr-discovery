@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 // setupTestMonitor creates a test monitor with miniredis cache.

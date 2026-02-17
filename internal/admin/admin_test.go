@@ -11,10 +11,10 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
-	"gitlab.com/coldforge/coldforge-discovery/internal/discovery"
-	"gitlab.com/coldforge/coldforge-discovery/internal/relay"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/discovery"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/relay"
 )
 
 // mockPublisher is a mock publisher for testing.

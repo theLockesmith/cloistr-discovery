@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 // setupTestCoordinator creates a test coordinator with miniredis cache.

@@ -8,8 +8,8 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 // PeerDiscovery discovers relays from trusted discovery service peers (kind 30072).

@@ -15,9 +15,9 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
-	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 // Publisher publishes kind 30072 relay directory events.

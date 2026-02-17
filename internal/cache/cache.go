@@ -10,7 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 // Client wraps the Redis client for discovery caching.

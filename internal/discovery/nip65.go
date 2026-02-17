@@ -8,9 +8,9 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/cache"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
-	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 // NIP65Crawler discovers relays by crawling NIP-65 relay list events (kind 10002).

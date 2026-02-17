@@ -8,9 +8,9 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"gitlab.com/coldforge/coldforge-discovery/internal/backoff"
-	"gitlab.com/coldforge/coldforge-discovery/internal/config"
-	"gitlab.com/coldforge/coldforge-discovery/internal/metrics"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/backoff"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 // NIP66Consumer discovers relays by consuming NIP-66 relay monitor events (kind 30166).
