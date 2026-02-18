@@ -155,6 +155,7 @@ Environment variables:
 - [x] Health check verification for background goroutines (internal/health package)
 - [x] TTL expiration tests (8 tests in cache package)
 - [x] Comprehensive test suite (357 test runs across 11 packages: api, admin, cache, config, discovery, health, metrics, publisher, relay, backoff)
+- [x] Grafana dashboard for relay network analytics (`deploy/grafana/dashboard.json`)
 
 ## Production Deployment
 
@@ -172,9 +173,12 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
+**Frontend (external project):**
 1. Improve UI filtering (add NIP filter dropdowns, search, sorting)
 2. Add relay submission form to public UI
-3. Grafana dashboard for relay network analytics
+
+**Backend:**
+- Import Grafana dashboard from `deploy/grafana/dashboard.json` into cluster Grafana instance
 
 ## Scaling Considerations (HPA)
 
