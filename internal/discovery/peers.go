@@ -59,7 +59,7 @@ func (p *PeerDiscovery) subscribeToRelay(ctx context.Context, relayURL string) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(30 * time.Second):
+		case <-time.After(peerDiscoveryTimeout):
 		}
 	}
 }

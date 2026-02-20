@@ -13,6 +13,20 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
+// TTL constants for cache entries.
+const (
+	// RelayEntryTTL is the TTL for relay directory entries.
+	RelayEntryTTL = time.Hour
+
+	// RelayHealthTTL is the TTL for relay health status.
+	// This should be shorter than RelayEntryTTL since health changes more frequently.
+	RelayHealthTTL = 10 * time.Minute
+
+	// RelayIndexTTL is the TTL for relay index entries (by NIP, location, etc.).
+	// Matches RelayEntryTTL to ensure indexes stay in sync with entries.
+	RelayIndexTTL = time.Hour
+)
+
 // Client wraps the Redis client for discovery caching.
 type Client struct {
 	rdb *redis.Client
@@ -103,7 +117,7 @@ func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.
 
 	// Update health separately for quick lookups
 	healthKey := "relay:health:" + entry.URL
-	if err := c.rdb.Set(ctx, healthKey, entry.Health, 5*time.Minute).Err(); err != nil {
+	if err := c.rdb.Set(ctx, healthKey, entry.Health, RelayHealthTTL).Err(); err != nil {
 		return fmt.Errorf("failed to set relay health: %w", err)
 	}
 

@@ -68,6 +68,24 @@ func (e *validationError) Error() string {
 	return e.msg
 }
 
+// reconstructRelayURL reconstructs and validates a relay URL from a path segment.
+// The path is expected to be the host/path portion without the scheme.
+func reconstructRelayURL(path string) (string, error) {
+	if path == "" {
+		return "", &validationError{"path is required"}
+	}
+	// Reject paths with suspicious patterns
+	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
+		return "", &validationError{"invalid path"}
+	}
+	// Reconstruct and validate
+	reconstructed := "wss://" + path
+	if err := validateRelayURL(reconstructed); err != nil {
+		return "", err
+	}
+	return reconstructed, nil
+}
+
 // PublisherInterface is an interface for getting publisher statistics.
 type PublisherInterface interface {
 	GetPublicKey() string
@@ -307,7 +325,11 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 // RelayHandler handles operations on a specific relay.
 func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/admin/relays/")
-	url := "wss://" + path // Reconstruct URL (path loses the protocol)
+	url, err := reconstructRelayURL(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodDelete:
@@ -372,7 +394,11 @@ func (s *Server) WhitelistHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) WhitelistItemHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	path := strings.TrimPrefix(r.URL.Path, "/admin/whitelist/")
-	url := "wss://" + path
+	url, err := reconstructRelayURL(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodDelete:
@@ -440,7 +466,11 @@ func (s *Server) BlacklistHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) BlacklistItemHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	path := strings.TrimPrefix(r.URL.Path, "/admin/blacklist/")
-	url := "wss://" + path
+	url, err := reconstructRelayURL(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodDelete:

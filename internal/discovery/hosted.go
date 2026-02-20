@@ -29,7 +29,7 @@ func NewHostedFetcher(cfg *config.Config, output chan<- DiscoveredRelay) *Hosted
 	return &HostedFetcher{
 		cfg: cfg,
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: hostedFetchTimeout,
 		},
 		output: output,
 	}

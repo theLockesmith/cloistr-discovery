@@ -11,6 +11,29 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
+const (
+	// discoveryChannelBuffer is the buffer size for the internal discovery channel.
+	discoveryChannelBuffer = 1000
+
+	// nip65ConcurrentConnections limits parallel connections during NIP-65 crawls.
+	nip65ConcurrentConnections = 5
+
+	// nip65CrawlTimeout is the timeout for connecting to a single relay during crawl.
+	nip65CrawlTimeout = 30 * time.Second
+
+	// nip65EventTimeout is the timeout for receiving events from a relay.
+	nip65EventTimeout = 20 * time.Second
+
+	// nip65EventLimit is the maximum number of NIP-65 events to fetch per relay.
+	nip65EventLimit = 500
+
+	// peerDiscoveryTimeout is the timeout for peer discovery operations.
+	peerDiscoveryTimeout = 30 * time.Second
+
+	// hostedFetchTimeout is the timeout for fetching hosted relay lists.
+	hostedFetchTimeout = 30 * time.Second
+)
+
 // DiscoveredRelay represents a relay discovered from a source.
 type DiscoveredRelay struct {
 	URL    string
@@ -40,7 +63,7 @@ type Coordinator struct {
 
 // NewCoordinator creates a new discovery coordinator.
 func NewCoordinator(cfg *config.Config, cache *cache.Client, output chan<- string) *Coordinator {
-	discoveries := make(chan DiscoveredRelay, 1000)
+	discoveries := make(chan DiscoveredRelay, discoveryChannelBuffer)
 
 	c := &Coordinator{
 		cfg:         cfg,

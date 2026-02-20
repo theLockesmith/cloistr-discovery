@@ -83,7 +83,7 @@ func (n *NIP65Crawler) crawl(ctx context.Context) {
 	}
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5) // Limit concurrent connections
+	sem := make(chan struct{}, nip65ConcurrentConnections)
 
 	for _, relayURL := range uniqueRelays {
 		wg.Add(1)
@@ -108,7 +108,7 @@ func (n *NIP65Crawler) crawl(ctx context.Context) {
 // crawlRelay fetches NIP-65 events from a single relay.
 func (n *NIP65Crawler) crawlRelay(ctx context.Context, relayURL string) {
 	// Create a timeout context for this relay
-	crawlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	crawlCtx, cancel := context.WithTimeout(ctx, nip65CrawlTimeout)
 	defer cancel()
 
 	relay, err := nostr.RelayConnect(crawlCtx, relayURL)
@@ -122,7 +122,7 @@ func (n *NIP65Crawler) crawlRelay(ctx context.Context, relayURL string) {
 	sub, err := relay.Subscribe(crawlCtx, []nostr.Filter{
 		{
 			Kinds: []int{10002},
-			Limit: 500, // Get a sample of recent relay lists
+			Limit: nip65EventLimit,
 		},
 	})
 	if err != nil {
@@ -132,7 +132,7 @@ func (n *NIP65Crawler) crawlRelay(ctx context.Context, relayURL string) {
 	defer sub.Unsub()
 
 	// Process events with timeout
-	timeout := time.After(20 * time.Second)
+	timeout := time.After(nip65EventTimeout)
 	eventCount := 0
 	relayCount := 0
 

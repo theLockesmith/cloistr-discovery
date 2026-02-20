@@ -1079,13 +1079,13 @@ func TestHealthKeyTTLExpiration(t *testing.T) {
 		t.Errorf("health = %v, want online", health)
 	}
 
-	// Health key has 5 minute TTL, fast forward past that
-	mr.FastForward(6 * time.Minute)
+	// Health key has RelayHealthTTL (10 minutes), fast forward past that
+	mr.FastForward(11 * time.Minute)
 
 	// Health key should be expired
 	_, err = client.rdb.Get(ctx, healthKey).Result()
 	if err == nil {
-		t.Error("health key should be expired after 5 minutes")
+		t.Error("health key should be expired after 10 minutes")
 	}
 
 	// Main entry should still exist (1 hour TTL)

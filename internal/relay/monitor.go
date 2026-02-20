@@ -19,6 +19,17 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
+const (
+	// maxConcurrentHealthChecks limits parallel health checks to avoid overwhelming the network.
+	maxConcurrentHealthChecks = 10
+
+	// discoveryInputBufferSize is the buffer size for the discovery input channel.
+	discoveryInputBufferSize = 1000
+
+	// degradedLatencyThreshold is the latency above which a relay is marked as degraded.
+	degradedLatencyThreshold = 5 * time.Second
+)
+
 // NIP11Info represents the NIP-11 relay information document.
 type NIP11Info struct {
 	Name          string `json:"name"`
@@ -61,7 +72,7 @@ func NewMonitor(cfg *config.Config, cache *cache.Client) *Monitor {
 		cfg:            cfg,
 		cache:          cache,
 		knownRelays:    make(map[string]bool),
-		discoveryInput: make(chan string, 1000),
+		discoveryInput: make(chan string, discoveryInputBufferSize),
 		client: &http.Client{
 			Timeout: time.Duration(cfg.NIP11Timeout) * time.Second,
 		},
@@ -159,7 +170,7 @@ func (m *Monitor) handleDiscoveredRelay(ctx context.Context, url string) {
 			}
 		}
 
-		if err := m.cache.SetRelayEntry(ctx, entry, time.Hour); err != nil {
+		if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
 			slog.Error("failed to cache relay entry", "url", url, "error", err)
 		}
 	}()
@@ -245,7 +256,7 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	metrics.RelaysMonitored.Set(float64(len(relays)))
 
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10) // Limit concurrent checks
+	semaphore := make(chan struct{}, maxConcurrentHealthChecks)
 
 	stats := newNetworkStats()
 	var mu sync.Mutex
@@ -273,7 +284,7 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 			m.collectEntryStats(stats, entry)
 			mu.Unlock()
 
-			if err := m.cache.SetRelayEntry(ctx, entry, time.Hour); err != nil {
+			if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
 				slog.Error("failed to cache relay entry", "url", relayURL, "error", err)
 			}
 		}(url)
@@ -471,7 +482,7 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 
 	// Determine health based on latency
 	health := "online"
-	if latency > 5*time.Second {
+	if latency > degradedLatencyThreshold {
 		health = "degraded"
 	}
 
