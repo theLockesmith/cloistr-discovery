@@ -325,38 +325,6 @@ func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
 	return event
 }
 
-// publishEvent publishes an event to all configured relays.
-func (p *Publisher) publishEvent(ctx context.Context, event *nostr.Event) error {
-	var lastErr error
-	var successCount int
-
-	for _, relayURL := range p.cfg.PublishRelays {
-		relay, err := nostr.RelayConnect(ctx, relayURL)
-		if err != nil {
-			lastErr = err
-			slog.Debug("failed to connect to publish relay", "url", relayURL, "error", err)
-			continue
-		}
-
-		err = relay.Publish(ctx, *event)
-		relay.Close()
-
-		if err != nil {
-			lastErr = err
-			slog.Debug("failed to publish to relay", "url", relayURL, "error", err)
-			continue
-		}
-
-		successCount++
-	}
-
-	if successCount == 0 && lastErr != nil {
-		return lastErr
-	}
-
-	return nil
-}
-
 // GetPublicKey returns the publisher's public key.
 func (p *Publisher) GetPublicKey() string {
 	return p.pk

@@ -189,6 +189,49 @@ func (c *Client) GetRelayEntry(ctx context.Context, url string) (*RelayEntry, er
 	return &entry, nil
 }
 
+// GetRelayEntriesBatch retrieves multiple relay entries in a single round-trip using pipelining.
+// Returns entries in the same order as the input URLs. Missing entries are returned as nil.
+func (c *Client) GetRelayEntriesBatch(ctx context.Context, urls []string) ([]*RelayEntry, error) {
+	if len(urls) == 0 {
+		return nil, nil
+	}
+
+	metrics.CacheOperationsTotal.WithLabelValues("get_relay_batch").Inc()
+
+	// Build keys and execute pipeline
+	pipe := c.rdb.Pipeline()
+	cmds := make([]*redis.StringCmd, len(urls))
+	for i, url := range urls {
+		cmds[i] = pipe.Get(ctx, "relay:"+url)
+	}
+
+	_, err := pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay_batch").Inc()
+		return nil, fmt.Errorf("failed to execute batch get: %w", err)
+	}
+
+	// Process results
+	entries := make([]*RelayEntry, len(urls))
+	for i, cmd := range cmds {
+		data, err := cmd.Bytes()
+		if err == redis.Nil {
+			continue // Entry not found, leave as nil
+		}
+		if err != nil {
+			continue // Skip individual errors
+		}
+
+		var entry RelayEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			continue // Skip malformed entries
+		}
+		entries[i] = &entry
+	}
+
+	return entries, nil
+}
+
 // GetRelaysByNIP returns all relays supporting a specific NIP.
 func (c *Client) GetRelaysByNIP(ctx context.Context, nip int) ([]string, error) {
 	key := fmt.Sprintf("relays:by:nip:%d", nip)

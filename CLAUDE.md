@@ -6,6 +6,11 @@
 
 **Status:** Deployed - Live on Atlantis at `https://discover.cloistr.xyz`
 
+## REQUIRED READING (Before ANY Action)
+
+**Claude MUST read this file at the start of every session:**
+- `~/claude/coldforge/cloistr/CLAUDE.md` - Cloistr project rules (contains further required reading)
+
 ## Documentation
 
 - [README.md](README.md) - Project overview
@@ -117,7 +122,7 @@ Environment variables:
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /metrics` | Prometheus metrics |
-| `GET /api/v1/relays` | List relays (filter by health, nips, location, moderation, etc.) |
+| `GET /api/v1/relays` | List relays (filter by health, nips, location, etc.; supports `limit`/`offset` pagination) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
 | `POST /admin/relays/submit` | Submit relay for discovery |
 | `POST /admin/relays/whitelist` | Manage relay whitelist |
@@ -156,6 +161,11 @@ Environment variables:
 - [x] TTL expiration tests (8 tests in cache package)
 - [x] Comprehensive test suite (357 test runs across 11 packages: api, admin, cache, config, discovery, health, metrics, publisher, relay, backoff)
 - [x] Grafana dashboard for relay network analytics (`deploy/grafana/dashboard.json`)
+- [x] Security: JSON body size limits on admin endpoints (DoS prevention)
+- [x] Security: Input validation for relay URLs and pubkeys
+- [x] Scaling: Batch cache retrieval for relay entries (pipelined Redis)
+- [x] Scaling: Pagination support on `/api/v1/relays` (limit/offset)
+- [x] Cleanup: Removed dead `publishEvent()` code
 
 ## Production Deployment
 

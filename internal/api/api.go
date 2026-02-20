@@ -39,7 +39,14 @@ func (s *Server) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 type RelaysResponse struct {
 	Relays []cache.RelayEntry `json:"relays"`
 	Total  int                `json:"total"`
+	Limit  int                `json:"limit,omitempty"`
+	Offset int                `json:"offset,omitempty"`
 }
+
+const (
+	defaultLimit = 100
+	maxLimit     = 1000
+)
 
 // RelaysHandler handles GET /api/v1/relays
 // Query params:
@@ -52,6 +59,8 @@ type RelaysResponse struct {
 //   - moderation: filter by minimum moderation level (unmoderated, light, active, strict)
 //   - language: filter by language (ISO 639-1 code)
 //   - community: filter by community name
+//   - limit: maximum number of results (default 100, max 1000)
+//   - offset: number of results to skip for pagination
 func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	defer func() {
@@ -221,16 +230,37 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get relay entries
-	var relays []cache.RelayEntry
+	// Parse pagination parameters
+	limit := defaultLimit
+	if limitStr := q.Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+			if limit > maxLimit {
+				limit = maxLimit
+			}
+		}
+	}
+
+	offset := 0
+	if offsetStr := q.Get("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	// Get relay entries using batch retrieval
 	healthFilter := q.Get("health")
 
-	for _, url := range relayURLs {
-		entry, err := s.cache.GetRelayEntry(ctx, url)
-		if err != nil {
-			slog.Error("failed to get relay entry", "url", url, "error", err)
-			continue
-		}
+	entries, err := s.cache.GetRelayEntriesBatch(ctx, relayURLs)
+	if err != nil {
+		slog.Error("failed to batch get relay entries", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Filter by health and collect valid entries
+	var relays []cache.RelayEntry
+	for _, entry := range entries {
 		if entry == nil {
 			continue
 		}
@@ -240,9 +270,23 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 		relays = append(relays, *entry)
 	}
 
+	// Apply pagination
+	total := len(relays)
+	if offset >= total {
+		relays = nil
+	} else {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		relays = relays[offset:end]
+	}
+
 	resp := RelaysResponse{
 		Relays: relays,
-		Total:  len(relays),
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -2,9 +2,12 @@
 package admin
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -13,6 +16,57 @@ import (
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/discovery"
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/relay"
 )
+
+const (
+	// maxBodySize limits request body size to prevent DoS attacks.
+	maxBodySize = 1024 * 16 // 16KB - plenty for admin JSON payloads
+)
+
+// decodeJSON decodes JSON from the request body with size limiting.
+func decodeJSON(r *http.Request, v interface{}) error {
+	return json.NewDecoder(io.LimitReader(r.Body, maxBodySize)).Decode(v)
+}
+
+// validateRelayURL validates a relay URL format.
+func validateRelayURL(rawURL string) error {
+	if rawURL == "" {
+		return &validationError{"URL is required"}
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return &validationError{"invalid URL format"}
+	}
+	if parsed.Scheme != "wss" && parsed.Scheme != "ws" {
+		return &validationError{"URL must use ws:// or wss:// scheme"}
+	}
+	if parsed.Host == "" {
+		return &validationError{"URL must have a host"}
+	}
+	return nil
+}
+
+// validatePubkey validates a Nostr public key (64 hex characters).
+func validatePubkey(pubkey string) error {
+	if pubkey == "" {
+		return &validationError{"pubkey is required"}
+	}
+	if len(pubkey) != 64 {
+		return &validationError{"pubkey must be 64 hex characters"}
+	}
+	if _, err := hex.DecodeString(pubkey); err != nil {
+		return &validationError{"pubkey must be valid hex"}
+	}
+	return nil
+}
+
+// validationError represents a validation error.
+type validationError struct {
+	msg string
+}
+
+func (e *validationError) Error() string {
+	return e.msg
+}
 
 // PublisherInterface is an interface for getting publisher statistics.
 type PublisherInterface interface {
@@ -224,12 +278,12 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			URL string `json:"url"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
-		if req.URL == "" {
-			http.Error(w, "URL is required", http.StatusBadRequest)
+		if err := validateRelayURL(req.URL); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -288,12 +342,12 @@ func (s *Server) WhitelistHandler(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			URL string `json:"url"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
-		if req.URL == "" {
-			http.Error(w, "URL is required", http.StatusBadRequest)
+		if err := validateRelayURL(req.URL); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -356,12 +410,12 @@ func (s *Server) BlacklistHandler(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			URL string `json:"url"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
-		if req.URL == "" {
-			http.Error(w, "URL is required", http.StatusBadRequest)
+		if err := validateRelayURL(req.URL); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -424,12 +478,12 @@ func (s *Server) PeersHandler(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Pubkey string `json:"pubkey"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
-		if req.Pubkey == "" {
-			http.Error(w, "Pubkey is required", http.StatusBadRequest)
+		if err := validatePubkey(req.Pubkey); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
