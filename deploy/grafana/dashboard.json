@@ -1537,7 +1537,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["nostr", "discovery", "coldforge"],
+  "tags": ["nostr", "discovery", "cloistr"],
   "templating": {
     "list": [
       {
