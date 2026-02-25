@@ -72,6 +72,25 @@ var (
 	})
 )
 
+// NIP-65 user relay list lookup metrics
+var (
+	NIP65UserLookupTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "discovery_nip65_user_lookup_total",
+		Help: "Total number of NIP-65 user relay list lookups",
+	}, []string{"cache_hit"}) // "true" or "false"
+
+	NIP65UserLookupDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "discovery_nip65_user_lookup_duration_seconds",
+		Help:    "Time taken to lookup user NIP-65 relay list",
+		Buckets: prometheus.ExponentialBuckets(0.1, 2, 8), // 100ms to ~25s
+	})
+
+	NIP65UserLookupErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "discovery_nip65_user_lookup_errors_total",
+		Help: "Total number of NIP-65 user lookup errors",
+	}, []string{"reason"}) // "timeout", "no_events", "invalid_pubkey", "fetch_error"
+)
+
 // Relay monitor / health check metrics
 var (
 	HealthChecksTotal = promauto.NewCounterVec(prometheus.CounterOpts{

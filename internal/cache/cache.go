@@ -25,6 +25,10 @@ const (
 	// RelayIndexTTL is the TTL for relay index entries (by NIP, location, etc.).
 	// Matches RelayEntryTTL to ensure indexes stay in sync with entries.
 	RelayIndexTTL = time.Hour
+
+	// UserNIP65TTL is the TTL for cached user NIP-65 relay lists.
+	// Short TTL since users may update their relay lists.
+	UserNIP65TTL = 5 * time.Minute
 )
 
 // Client wraps the Redis client for discovery caching.
@@ -552,4 +556,62 @@ func (c *Client) GetAllRelayURLs(ctx context.Context) ([]string, error) {
 	}
 
 	return urls, nil
+}
+
+// UserNIP65Entry represents a cached NIP-65 relay list for a user.
+// Key pattern: user:nip65:{pubkey}
+type UserNIP65Entry struct {
+	Pubkey    string          `json:"pubkey"`
+	Relays    []UserRelayData `json:"relays"`
+	FetchedAt time.Time       `json:"fetched_at"`
+}
+
+// UserRelayData represents a relay from a user's NIP-65 event.
+type UserRelayData struct {
+	URL   string `json:"url"`
+	Read  bool   `json:"read"`
+	Write bool   `json:"write"`
+}
+
+// SetUserNIP65 caches a user's NIP-65 relay list.
+func (c *Client) SetUserNIP65(ctx context.Context, entry *UserNIP65Entry) error {
+	metrics.CacheOperationsTotal.WithLabelValues("set_user_nip65").Inc()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_user_nip65").Inc()
+		return fmt.Errorf("failed to marshal user NIP-65 entry: %w", err)
+	}
+
+	key := "user:nip65:" + entry.Pubkey
+	if err := c.rdb.Set(ctx, key, data, UserNIP65TTL).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_user_nip65").Inc()
+		return fmt.Errorf("failed to set user NIP-65 entry: %w", err)
+	}
+
+	return nil
+}
+
+// GetUserNIP65 retrieves a user's cached NIP-65 relay list.
+// Returns nil, nil if not cached.
+func (c *Client) GetUserNIP65(ctx context.Context, pubkey string) (*UserNIP65Entry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_user_nip65").Inc()
+
+	key := "user:nip65:" + pubkey
+	data, err := c.rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_user_nip65").Inc()
+		return nil, fmt.Errorf("failed to get user NIP-65 entry: %w", err)
+	}
+
+	var entry UserNIP65Entry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_user_nip65").Inc()
+		return nil, fmt.Errorf("failed to unmarshal user NIP-65 entry: %w", err)
+	}
+
+	return &entry, nil
 }

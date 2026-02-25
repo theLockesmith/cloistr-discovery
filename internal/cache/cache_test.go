@@ -1455,3 +1455,132 @@ func TestStats(t *testing.T) {
 		}
 	})
 }
+
+func TestClient_SetUserNIP65_GetUserNIP65(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	t.Run("store and retrieve user NIP-65 entry", func(t *testing.T) {
+		entry := &UserNIP65Entry{
+			Pubkey:    "abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
+			FetchedAt: time.Now(),
+			Relays: []UserRelayData{
+				{URL: "wss://relay.damus.io", Read: true, Write: true},
+				{URL: "wss://nos.lol", Read: true, Write: false},
+				{URL: "wss://relay.nostr.band", Read: false, Write: true},
+			},
+		}
+
+		err := client.SetUserNIP65(ctx, entry)
+		if err != nil {
+			t.Fatalf("SetUserNIP65() error: %v", err)
+		}
+
+		retrieved, err := client.GetUserNIP65(ctx, entry.Pubkey)
+		if err != nil {
+			t.Fatalf("GetUserNIP65() error: %v", err)
+		}
+
+		if retrieved == nil {
+			t.Fatal("GetUserNIP65() returned nil")
+		}
+
+		if retrieved.Pubkey != entry.Pubkey {
+			t.Errorf("Pubkey = %v, want %v", retrieved.Pubkey, entry.Pubkey)
+		}
+		if len(retrieved.Relays) != len(entry.Relays) {
+			t.Errorf("Relays length = %v, want %v", len(retrieved.Relays), len(entry.Relays))
+		}
+
+		// Check relay entries
+		for i, relay := range retrieved.Relays {
+			if relay.URL != entry.Relays[i].URL {
+				t.Errorf("Relay[%d].URL = %v, want %v", i, relay.URL, entry.Relays[i].URL)
+			}
+			if relay.Read != entry.Relays[i].Read {
+				t.Errorf("Relay[%d].Read = %v, want %v", i, relay.Read, entry.Relays[i].Read)
+			}
+			if relay.Write != entry.Relays[i].Write {
+				t.Errorf("Relay[%d].Write = %v, want %v", i, relay.Write, entry.Relays[i].Write)
+			}
+		}
+	})
+
+	t.Run("get non-existent user NIP-65 entry", func(t *testing.T) {
+		retrieved, err := client.GetUserNIP65(ctx, "nonexistent123456nonexistent123456nonexistent123456nonexistent12")
+		if err != nil {
+			t.Errorf("GetUserNIP65() unexpected error: %v", err)
+		}
+		if retrieved != nil {
+			t.Errorf("GetUserNIP65() expected nil, got %v", retrieved)
+		}
+	})
+
+	t.Run("store entry with empty relays", func(t *testing.T) {
+		entry := &UserNIP65Entry{
+			Pubkey:    "empty123empty456empty123empty456empty123empty456empty123empty456",
+			FetchedAt: time.Now(),
+			Relays:    []UserRelayData{},
+		}
+
+		err := client.SetUserNIP65(ctx, entry)
+		if err != nil {
+			t.Fatalf("SetUserNIP65() error: %v", err)
+		}
+
+		retrieved, err := client.GetUserNIP65(ctx, entry.Pubkey)
+		if err != nil {
+			t.Fatalf("GetUserNIP65() error: %v", err)
+		}
+
+		if retrieved == nil {
+			t.Fatal("GetUserNIP65() returned nil")
+		}
+		if len(retrieved.Relays) != 0 {
+			t.Errorf("Expected 0 relays, got %d", len(retrieved.Relays))
+		}
+	})
+}
+
+func TestUserNIP65TTLExpiration(t *testing.T) {
+	client, mr := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	entry := &UserNIP65Entry{
+		Pubkey:    "ttltest123ttltest456ttltest123ttltest456ttltest123ttltest456ttl1",
+		FetchedAt: time.Now(),
+		Relays: []UserRelayData{
+			{URL: "wss://relay.example.com", Read: true, Write: true},
+		},
+	}
+
+	err := client.SetUserNIP65(ctx, entry)
+	if err != nil {
+		t.Fatalf("SetUserNIP65() error: %v", err)
+	}
+
+	// Verify it exists
+	retrieved, err := client.GetUserNIP65(ctx, entry.Pubkey)
+	if err != nil {
+		t.Fatalf("GetUserNIP65() error: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("GetUserNIP65() should return entry before TTL expires")
+	}
+
+	// Fast forward past TTL (UserNIP65TTL = 5 minutes)
+	mr.FastForward(6 * time.Minute)
+
+	// Verify it's gone
+	retrieved, err = client.GetUserNIP65(ctx, entry.Pubkey)
+	if err != nil {
+		t.Fatalf("GetUserNIP65() error: %v", err)
+	}
+	if retrieved != nil {
+		t.Error("GetUserNIP65() should return nil after TTL expires")
+	}
+}

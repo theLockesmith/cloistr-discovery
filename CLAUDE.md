@@ -123,6 +123,7 @@ Environment variables:
 | `GET /health` | Health check |
 | `GET /metrics` | Prometheus metrics |
 | `GET /api/v1/relays` | List relays (filter by health, nips, location, etc.; supports `limit`/`offset` pagination) |
+| `GET /api/v1/users/{pubkey}/relays` | User's NIP-65 relay list with health enrichment (live fetch, 5min cache) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
 | `POST /admin/relays/submit` | Submit relay for discovery |
 | `POST /admin/relays/whitelist` | Manage relay whitelist |
@@ -166,6 +167,7 @@ Environment variables:
 - [x] Scaling: Batch cache retrieval for relay entries (pipelined Redis)
 - [x] Scaling: Pagination support on `/api/v1/relays` (limit/offset)
 - [x] Cleanup: Removed dead `publishEvent()` code
+- [x] NIP-65 user relay list endpoint (`GET /api/v1/users/{pubkey}/relays`) with health enrichment
 
 ## Production Deployment
 
@@ -186,9 +188,10 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 **Frontend (external project):**
 1. Improve UI filtering (add NIP filter dropdowns, search, sorting)
 2. Add relay submission form to public UI
+3. Integrate with user relay list endpoint for personalized relay recommendations
 
 **Backend:**
-- Import Grafana dashboard from `deploy/grafana/dashboard.json` into cluster Grafana instance
+- Consider additional user-facing endpoints (e.g., relay recommendations, relay comparison)
 
 ## Scaling Considerations (HPA)
 

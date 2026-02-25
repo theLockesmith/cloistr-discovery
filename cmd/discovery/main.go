@@ -82,6 +82,7 @@ func main() {
 	mux.HandleFunc("/health", healthRegistry.Handler())
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
+	mux.HandleFunc("/api/v1/users/", apiServer.UserRelaysHandler)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
