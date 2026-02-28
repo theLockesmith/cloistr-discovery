@@ -476,3 +476,302 @@ func TestNew(t *testing.T) {
 		t.Error("New() did not set cache client properly")
 	}
 }
+
+func TestRelayHandler(t *testing.T) {
+	server, mr := setupTestServer(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+
+	// Setup test data with comprehensive metadata
+	testRelay := &cache.RelayEntry{
+		URL:              "wss://test.relay.example.com",
+		Name:             "Test Relay",
+		Description:      "A comprehensive test relay for unit testing",
+		Pubkey:           "abc123pubkey",
+		SupportedNIPs:    []int{1, 11, 42, 65},
+		Software:         "nostr-rs-relay",
+		Version:          "0.9.0",
+		Health:           "online",
+		LatencyMs:        45,
+		LastChecked:      time.Now(),
+		CountryCode:      "US",
+		PaymentRequired:  false,
+		AuthRequired:     true,
+		ContentPolicy:    "sfw",
+		Moderation:       "active",
+		ModerationPolicy: "https://test.relay.example.com/rules",
+		Community:        "test-community",
+		Languages:        []string{"en", "es"},
+	}
+	server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		queryParams    string
+		wantStatusCode int
+		wantError      string
+		checkRelay     func(t *testing.T, relay *cache.RelayEntry)
+	}{
+		{
+			name:           "method not allowed",
+			method:         http.MethodPost,
+			path:           "/api/v1/relay/",
+			queryParams:    "?url=wss://test.relay.example.com",
+			wantStatusCode: http.StatusMethodNotAllowed,
+		},
+		{
+			name:           "relay found via query param",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/",
+			queryParams:    "?url=wss://test.relay.example.com",
+			wantStatusCode: http.StatusOK,
+			checkRelay: func(t *testing.T, relay *cache.RelayEntry) {
+				if relay.URL != "wss://test.relay.example.com" {
+					t.Errorf("expected URL wss://test.relay.example.com, got %s", relay.URL)
+				}
+				if relay.Name != "Test Relay" {
+					t.Errorf("expected Name 'Test Relay', got %s", relay.Name)
+				}
+				if relay.Software != "nostr-rs-relay" {
+					t.Errorf("expected Software 'nostr-rs-relay', got %s", relay.Software)
+				}
+				if !relay.AuthRequired {
+					t.Error("expected AuthRequired to be true")
+				}
+				if relay.ContentPolicy != "sfw" {
+					t.Errorf("expected ContentPolicy 'sfw', got %s", relay.ContentPolicy)
+				}
+			},
+		},
+		{
+			name:           "relay found via path",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/wss://test.relay.example.com",
+			queryParams:    "",
+			wantStatusCode: http.StatusOK,
+			checkRelay: func(t *testing.T, relay *cache.RelayEntry) {
+				if relay.URL != "wss://test.relay.example.com" {
+					t.Errorf("expected URL wss://test.relay.example.com, got %s", relay.URL)
+				}
+			},
+		},
+		{
+			name:           "relay not found",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/",
+			queryParams:    "?url=wss://nonexistent.relay.com",
+			wantStatusCode: http.StatusNotFound,
+			wantError:      "relay not found",
+		},
+		{
+			name:           "missing URL parameter",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/",
+			queryParams:    "",
+			wantStatusCode: http.StatusBadRequest,
+			wantError:      "relay URL required",
+		},
+		{
+			name:           "invalid URL format - no protocol",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/",
+			queryParams:    "?url=relay.example.com",
+			wantStatusCode: http.StatusBadRequest,
+			wantError:      "invalid relay URL: must start with wss:// or ws://",
+		},
+		{
+			name:           "invalid URL format - https",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/",
+			queryParams:    "?url=https://relay.example.com",
+			wantStatusCode: http.StatusBadRequest,
+			wantError:      "invalid relay URL: must start with wss:// or ws://",
+		},
+		{
+			name:           "ws:// URL is valid",
+			method:         http.MethodGet,
+			path:           "/api/v1/relay/",
+			queryParams:    "?url=ws://insecure.relay.com",
+			wantStatusCode: http.StatusNotFound, // Valid format but not in cache
+			wantError:      "relay not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path+tt.queryParams, nil)
+			w := httptest.NewRecorder()
+
+			server.RelayHandler(w, req)
+
+			resp := w.Result()
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tt.wantStatusCode {
+				t.Errorf("RelayHandler() status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
+				return
+			}
+
+			var relayResp SingleRelayResponse
+			if err := json.NewDecoder(resp.Body).Decode(&relayResp); err != nil {
+				if tt.wantStatusCode == http.StatusMethodNotAllowed {
+					return // Method not allowed returns plain text
+				}
+				t.Fatalf("failed to decode response: %v", err)
+			}
+
+			if tt.wantError != "" {
+				if relayResp.Error != tt.wantError {
+					t.Errorf("RelayHandler() error = %q, want %q", relayResp.Error, tt.wantError)
+				}
+				return
+			}
+
+			if tt.checkRelay != nil {
+				if relayResp.Relay == nil {
+					t.Fatal("RelayHandler() returned nil relay when one was expected")
+				}
+				tt.checkRelay(t, relayResp.Relay)
+			}
+		})
+	}
+}
+
+func TestRelayHandler_ContentType(t *testing.T) {
+	server, mr := setupTestServer(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+	testRelay := &cache.RelayEntry{
+		URL:    "wss://test.relay.example.com",
+		Name:   "Test Relay",
+		Health: "online",
+	}
+	server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/?url=wss://test.relay.example.com", nil)
+	w := httptest.NewRecorder()
+
+	server.RelayHandler(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("RelayHandler() Content-Type = %v, want application/json", contentType)
+	}
+}
+
+func TestRelayHandler_FullMetadata(t *testing.T) {
+	server, mr := setupTestServer(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+
+	// Setup a relay with all metadata fields populated
+	fullRelay := &cache.RelayEntry{
+		URL:              "wss://full.relay.example.com",
+		Name:             "Full Metadata Relay",
+		Description:      "A relay with all metadata fields for testing",
+		Pubkey:           "abcd1234pubkey5678",
+		SupportedNIPs:    []int{1, 4, 9, 11, 42, 65, 66},
+		Software:         "strfry",
+		Version:          "1.0.0",
+		Health:           "online",
+		LatencyMs:        25,
+		LastChecked:      time.Now(),
+		CountryCode:      "DE",
+		PaymentRequired:  true,
+		AuthRequired:     false,
+		ContentPolicy:    "anything",
+		Moderation:       "unmoderated",
+		ModerationPolicy: "",
+		Community:        "freedom-tech",
+		Languages:        []string{"en", "de", "fr"},
+		Topics:           map[string]int{"bitcoin": 5, "nostr": 10},
+		Atmosphere:       map[string]int{"technical": 3, "friendly": 2},
+	}
+	server.cache.SetRelayEntry(ctx, fullRelay, time.Hour)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/?url=wss://full.relay.example.com", nil)
+	w := httptest.NewRecorder()
+
+	server.RelayHandler(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var relayResp SingleRelayResponse
+	if err := json.NewDecoder(resp.Body).Decode(&relayResp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	relay := relayResp.Relay
+	if relay == nil {
+		t.Fatal("expected non-nil relay")
+	}
+
+	// Verify all fields
+	if relay.URL != fullRelay.URL {
+		t.Errorf("URL mismatch: got %s, want %s", relay.URL, fullRelay.URL)
+	}
+	if relay.Name != fullRelay.Name {
+		t.Errorf("Name mismatch: got %s, want %s", relay.Name, fullRelay.Name)
+	}
+	if relay.Description != fullRelay.Description {
+		t.Errorf("Description mismatch")
+	}
+	if relay.Pubkey != fullRelay.Pubkey {
+		t.Errorf("Pubkey mismatch")
+	}
+	if len(relay.SupportedNIPs) != len(fullRelay.SupportedNIPs) {
+		t.Errorf("SupportedNIPs length mismatch: got %d, want %d", len(relay.SupportedNIPs), len(fullRelay.SupportedNIPs))
+	}
+	if relay.Software != fullRelay.Software {
+		t.Errorf("Software mismatch: got %s, want %s", relay.Software, fullRelay.Software)
+	}
+	if relay.Version != fullRelay.Version {
+		t.Errorf("Version mismatch")
+	}
+	if relay.Health != fullRelay.Health {
+		t.Errorf("Health mismatch")
+	}
+	if relay.LatencyMs != fullRelay.LatencyMs {
+		t.Errorf("LatencyMs mismatch: got %d, want %d", relay.LatencyMs, fullRelay.LatencyMs)
+	}
+	if relay.CountryCode != fullRelay.CountryCode {
+		t.Errorf("CountryCode mismatch")
+	}
+	if relay.PaymentRequired != fullRelay.PaymentRequired {
+		t.Errorf("PaymentRequired mismatch")
+	}
+	if relay.AuthRequired != fullRelay.AuthRequired {
+		t.Errorf("AuthRequired mismatch")
+	}
+	if relay.ContentPolicy != fullRelay.ContentPolicy {
+		t.Errorf("ContentPolicy mismatch")
+	}
+	if relay.Moderation != fullRelay.Moderation {
+		t.Errorf("Moderation mismatch")
+	}
+	if relay.Community != fullRelay.Community {
+		t.Errorf("Community mismatch")
+	}
+	if len(relay.Languages) != len(fullRelay.Languages) {
+		t.Errorf("Languages length mismatch")
+	}
+	if len(relay.Topics) != len(fullRelay.Topics) {
+		t.Errorf("Topics length mismatch")
+	}
+	if len(relay.Atmosphere) != len(fullRelay.Atmosphere) {
+		t.Errorf("Atmosphere length mismatch")
+	}
+}

@@ -344,3 +344,75 @@ func moderationLevelsAtOrAbove(level string) []string {
 	}
 	return result
 }
+
+// SingleRelayResponse is the response for a single relay query.
+type SingleRelayResponse struct {
+	Relay *cache.RelayEntry `json:"relay,omitempty"`
+	Error string            `json:"error,omitempty"`
+}
+
+// RelayHandler handles GET /api/v1/relay/{url}
+// Returns the full relay metadata for a single relay.
+// The relay URL should be URL-encoded in the path (e.g., /api/v1/relay/wss%3A%2F%2Frelay.example.com)
+// or passed as a query parameter (e.g., /api/v1/relay?url=wss://relay.example.com)
+func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	defer func() {
+		metrics.QueryDurationSeconds.WithLabelValues("relay_detail").Observe(time.Since(start).Seconds())
+	}()
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	metrics.QueriesTotal.WithLabelValues("relay_detail").Inc()
+
+	// Get relay URL from query parameter or path
+	var relayURL string
+	if urlParam := r.URL.Query().Get("url"); urlParam != "" {
+		relayURL = urlParam
+	} else {
+		// Extract from path: /api/v1/relay/wss://...
+		path := r.URL.Path
+		prefix := "/api/v1/relay/"
+		if strings.HasPrefix(path, prefix) {
+			relayURL = path[len(prefix):]
+		}
+	}
+
+	if relayURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "relay URL required"})
+		return
+	}
+
+	// Validate URL format
+	if !strings.HasPrefix(relayURL, "wss://") && !strings.HasPrefix(relayURL, "ws://") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "invalid relay URL: must start with wss:// or ws://"})
+		return
+	}
+
+	ctx := r.Context()
+	entry, err := s.cache.GetRelayEntry(ctx, relayURL)
+	if err != nil {
+		slog.Error("failed to get relay entry", "url", relayURL, "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "internal server error"})
+		return
+	}
+
+	if entry == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "relay not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(SingleRelayResponse{Relay: entry})
+}

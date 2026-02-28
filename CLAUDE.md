@@ -123,6 +123,7 @@ Environment variables:
 | `GET /health` | Health check |
 | `GET /metrics` | Prometheus metrics |
 | `GET /api/v1/relays` | List relays (filter by health, nips, location, etc.; supports `limit`/`offset` pagination) |
+| `GET /api/v1/relay/?url={url}` | Single relay metadata (full NIP-11 info, health, policies) |
 | `GET /api/v1/users/{pubkey}/relays` | User's NIP-65 relay list with health enrichment (live fetch, 5min cache) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
 | `POST /admin/relays/submit` | Submit relay for discovery |
@@ -168,6 +169,7 @@ Environment variables:
 - [x] Scaling: Pagination support on `/api/v1/relays` (limit/offset)
 - [x] Cleanup: Removed dead `publishEvent()` code
 - [x] NIP-65 user relay list endpoint (`GET /api/v1/users/{pubkey}/relays`) with health enrichment
+- [x] Single relay metadata endpoint (`GET /api/v1/relay/?url={url}`) with full NIP-11 data
 
 ## Production Deployment
 
