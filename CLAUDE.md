@@ -187,6 +187,39 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 
 ## Next Steps
 
+### Priority: Relay Preferences API (Phase 2)
+
+**Add `/api/v1/relay-prefs/{pubkey}` endpoint for cloistr-common library.**
+
+This is part of the unified relay preferences system. See: `~/claude/coldforge/cloistr/architecture/relay-preferences.md`
+
+**Endpoint specification:**
+```
+GET /api/v1/relay-prefs/{pubkey}
+
+Response:
+{
+  "pubkey": "abc123...",
+  "relays": [
+    {"url": "wss://relay.example.com", "read": true, "write": true},
+    {"url": "wss://backup.com", "read": true, "write": false}
+  ],
+  "source": "cloistr-relays",  // or "nip65" or "default"
+  "cached_at": "2026-03-01T12:00:00Z"
+}
+```
+
+**Implementation:**
+1. Query relay.cloistr.xyz for `kind:30078 d=cloistr-relays` by pubkey
+2. If not found, fall back to `kind:10002` (NIP-65)
+3. If still not found, return empty relays with `source: "default"`
+4. Cache results (5-10 min TTL)
+5. Return 404 only on invalid pubkey format, not on "no preferences found"
+
+**Why here:** Discovery already has relay connectivity, caching infrastructure, and is the natural place for this. The `cloistr-common` library's fast path queries this endpoint.
+
+### Other Next Steps
+
 **Frontend (external project):**
 1. Improve UI filtering (add NIP filter dropdowns, search, sorting)
 2. Add relay submission form to public UI
