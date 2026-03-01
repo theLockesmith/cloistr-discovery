@@ -29,6 +29,10 @@ const (
 	// UserNIP65TTL is the TTL for cached user NIP-65 relay lists.
 	// Short TTL since users may update their relay lists.
 	UserNIP65TTL = 5 * time.Minute
+
+	// RelayPrefsTTL is the TTL for cached relay preferences.
+	// Short TTL for cloistr-common library fast path queries.
+	RelayPrefsTTL = 5 * time.Minute
 )
 
 // Client wraps the Redis client for discovery caching.
@@ -611,6 +615,59 @@ func (c *Client) GetUserNIP65(ctx context.Context, pubkey string) (*UserNIP65Ent
 	if err := json.Unmarshal(data, &entry); err != nil {
 		metrics.CacheErrorsTotal.WithLabelValues("get_user_nip65").Inc()
 		return nil, fmt.Errorf("failed to unmarshal user NIP-65 entry: %w", err)
+	}
+
+	return &entry, nil
+}
+
+// RelayPrefsEntry represents cached relay preferences for a user.
+// Key pattern: relayprefs:{pubkey}
+// Source is "cloistr-relays" (kind:30078), "nip65" (kind:10002), or "default".
+type RelayPrefsEntry struct {
+	Pubkey   string          `json:"pubkey"`
+	Relays   []UserRelayData `json:"relays"`
+	Source   string          `json:"source"`
+	CachedAt time.Time       `json:"cached_at"`
+}
+
+// SetRelayPrefs caches a user's relay preferences.
+func (c *Client) SetRelayPrefs(ctx context.Context, entry *RelayPrefsEntry) error {
+	metrics.CacheOperationsTotal.WithLabelValues("set_relay_prefs").Inc()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_relay_prefs").Inc()
+		return fmt.Errorf("failed to marshal relay prefs entry: %w", err)
+	}
+
+	key := "relayprefs:" + entry.Pubkey
+	if err := c.rdb.Set(ctx, key, data, RelayPrefsTTL).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_relay_prefs").Inc()
+		return fmt.Errorf("failed to set relay prefs entry: %w", err)
+	}
+
+	return nil
+}
+
+// GetRelayPrefs retrieves a user's cached relay preferences.
+// Returns nil, nil if not cached.
+func (c *Client) GetRelayPrefs(ctx context.Context, pubkey string) (*RelayPrefsEntry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_relay_prefs").Inc()
+
+	key := "relayprefs:" + pubkey
+	data, err := c.rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay_prefs").Inc()
+		return nil, fmt.Errorf("failed to get relay prefs entry: %w", err)
+	}
+
+	var entry RelayPrefsEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay_prefs").Inc()
+		return nil, fmt.Errorf("failed to unmarshal relay prefs entry: %w", err)
 	}
 
 	return &entry, nil

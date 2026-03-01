@@ -83,6 +83,7 @@ func main() {
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
 	mux.HandleFunc("/api/v1/relay/", apiServer.RelayHandler)
+	mux.HandleFunc("/api/v1/relay-prefs/", apiServer.RelayPrefsHandler)
 	mux.HandleFunc("/api/v1/users/", apiServer.UserRelaysHandler)
 
 	server := &http.Server{
