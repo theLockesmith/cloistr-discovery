@@ -195,7 +195,27 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 3. Integrate with user relay list endpoint for personalized relay recommendations
 
 **Backend:**
-- Consider additional user-facing endpoints (e.g., relay recommendations, relay comparison)
+1. **Relay recommendations endpoint** (`GET /api/v1/relays/recommend`)
+   - Suggest relays based on: user's follows (where they post), location/latency, NIP support
+   - Input: pubkey (optional), preferred NIPs, region
+   - Output: ranked list of recommended relays with reasons
+
+2. **Relay comparison endpoint** (`GET /api/v1/relays/compare`)
+   - Side-by-side comparison of 2+ relays
+   - Input: list of relay URLs
+   - Output: comparison table (NIPs, latency, policies, health, features)
+
+3. **WoT-enhanced relay recommendations**
+   - Use user's follows (NIP-02) to find relays where their network posts
+   - Query NIP-65 lists for followed pubkeys → rank relays by network presence
+   - Weight by trust distance (direct follows > follows-of-follows)
+   - Endpoint: Extend `/api/v1/relays/recommend` with WoT scoring
+
+4. **Trusted relay reviews/ratings** (Kind 30078)
+   - Let users rate/review relays with signed NIP-78 events (`relay-review` d-tag)
+   - Aggregate ratings weighted by WoT (reviews from trusted pubkeys count more)
+   - Surface in recommendations and relay metadata endpoints
+   - Store/cache reviews in discovery service
 
 **Relay Preferences Integration:** (See `~/claude/coldforge/cloistr/architecture/relay-preferences.md`)
 - ✅ Phase 1: `cloistr-common` library created
