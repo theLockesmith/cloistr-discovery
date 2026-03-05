@@ -200,8 +200,13 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 **Relay Preferences Integration:** (See `~/claude/coldforge/cloistr/architecture/relay-preferences.md`)
 - ✅ Phase 1: `cloistr-common` library created
 - ✅ Phase 2: Discovery API endpoint (`/api/v1/relay-prefs/{pubkey}`)
-- Phase 3: Integrate relay prefs into Cloistr Go services (chat, calendar, email, etc.)
-- Phase 4: Build unified relay settings UI component
+- ✅ Phase 3: Integrate relay prefs into Cloistr Go services
+  - cloistr-drive: Frontend JS integration (relayprefs.js)
+  - cloistr-calendar: Backend Go with relayprefs.Client
+  - cloistr-chat: Backend Go with inline RelayPrefs (Go 1.21 compat)
+  - cloistr-documents: Backend Go with relayprefs.Client
+  - Atlas configs updated for calendar/documents
+- Phase 4: Build unified relay settings UI component (JS API ready, needs UI modal)
 
 ## Scaling Considerations (HPA)
 
