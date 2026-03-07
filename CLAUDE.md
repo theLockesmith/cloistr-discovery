@@ -124,6 +124,7 @@ Environment variables:
 | `GET /metrics` | Prometheus metrics |
 | `GET /api/v1/relays` | List relays (filter by health, nips, location, etc.; supports `limit`/`offset` pagination) |
 | `GET /api/v1/relay/?url={url}` | Single relay metadata (full NIP-11 info, health, policies) |
+| `GET /api/v1/relays/recommend` | Relay recommendations (scored by health, latency, NIPs, region) |
 | `GET /api/v1/relay-prefs/{pubkey}` | User's relay preferences (cloistr-relays or NIP-65 fallback, 5min cache) |
 | `GET /api/v1/users/{pubkey}/relays` | User's NIP-65 relay list with health enrichment (live fetch, 5min cache) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
@@ -172,6 +173,7 @@ Environment variables:
 - [x] NIP-65 user relay list endpoint (`GET /api/v1/users/{pubkey}/relays`) with health enrichment
 - [x] Single relay metadata endpoint (`GET /api/v1/relay/?url={url}`) with full NIP-11 data
 - [x] Relay preferences endpoint (`GET /api/v1/relay-prefs/{pubkey}`) for cloistr-common library
+- [x] Relay recommendations endpoint (`GET /api/v1/relays/recommend`) with scoring by health, latency, NIPs, region
 
 ## Production Deployment
 
@@ -195,21 +197,21 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 3. Integrate with user relay list endpoint for personalized relay recommendations
 
 **Backend:**
-1. **Relay recommendations endpoint** (`GET /api/v1/relays/recommend`)
-   - Suggest relays based on: user's follows (where they post), location/latency, NIP support
-   - Input: pubkey (optional), preferred NIPs, region
-   - Output: ranked list of recommended relays with reasons
+1. ✅ **Relay recommendations endpoint** (`GET /api/v1/relays/recommend`) - COMPLETE
+   - Scores relays by: health, latency, NIP support, region match
+   - Input: `nips` (comma-separated), `region`, `exclude_auth`, `exclude_payment`, `limit`
+   - Output: ranked list with score breakdown and reasons
 
 2. **Relay comparison endpoint** (`GET /api/v1/relays/compare`)
    - Side-by-side comparison of 2+ relays
    - Input: list of relay URLs
    - Output: comparison table (NIPs, latency, policies, health, features)
 
-3. **WoT-enhanced relay recommendations**
+3. **WoT-enhanced relay recommendations** (extend existing `/api/v1/relays/recommend`)
+   - Add `pubkey` param to enable WoT-based scoring
    - Use user's follows (NIP-02) to find relays where their network posts
    - Query NIP-65 lists for followed pubkeys → rank relays by network presence
    - Weight by trust distance (direct follows > follows-of-follows)
-   - Endpoint: Extend `/api/v1/relays/recommend` with WoT scoring
 
 4. **Trusted relay reviews/ratings** (Kind 30078)
    - Let users rate/review relays with signed NIP-78 events (`relay-review` d-tag)
