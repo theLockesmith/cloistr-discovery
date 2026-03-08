@@ -4,6 +4,8 @@ stages:
 
 variables:
   GO_VERSION: "1.24"
+  # Bypass pipeline refs race condition by doing manual checkout
+  GIT_STRATEGY: none
 
 .go-cache: &go-cache
   cache:
@@ -19,6 +21,15 @@ test:
     GOPATH: ${CI_PROJECT_DIR}/.go
   before_script:
     - for i in 1 2 3 4 5; do apk add --no-cache git && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
+    # Manual checkout to bypass pipeline refs race condition
+    - |
+      for i in 1 2 3 4 5; do
+        git clone --depth 20 --branch ${CI_COMMIT_REF_NAME} ${CI_REPOSITORY_URL} /tmp/src && break
+        echo "Clone attempt $i failed, retrying in $((i*5))s..."
+        sleep $((i*5))
+      done
+    - cp -r /tmp/src/. .
+    - git checkout ${CI_COMMIT_SHA}
   script:
     - go mod download
     - go test -v -coverprofile=coverage.out ./...
@@ -29,6 +40,16 @@ lint:
   stage: test
   image: golangci/golangci-lint:latest
   <<: *go-cache
+  before_script:
+    # Manual checkout to bypass pipeline refs race condition
+    - |
+      for i in 1 2 3 4 5; do
+        git clone --depth 20 --branch ${CI_COMMIT_REF_NAME} ${CI_REPOSITORY_URL} /tmp/src && break
+        echo "Clone attempt $i failed, retrying in $((i*5))s..."
+        sleep $((i*5))
+      done
+    - cp -r /tmp/src/. .
+    - git checkout ${CI_COMMIT_SHA}
   script:
     - golangci-lint run --timeout 5m
   allow_failure: true
@@ -36,6 +57,11 @@ lint:
 build:
   stage: build
   timeout: 90m
+  variables:
+    # Build needs source code, can't use GIT_STRATEGY: none
+    # Use clone to minimize race condition window
+    GIT_STRATEGY: clone
+    GIT_DEPTH: "20"
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
