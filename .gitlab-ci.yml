@@ -35,6 +35,7 @@ lint:
 
 build:
   stage: build
+  timeout: 90m
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
