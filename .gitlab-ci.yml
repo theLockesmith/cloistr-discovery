@@ -57,17 +57,19 @@ lint:
 build:
   stage: build
   timeout: 90m
-  variables:
-    # Build needs source code, can't use GIT_STRATEGY: none
-    # Use clone to minimize race condition window
-    GIT_STRATEGY: clone
-    GIT_DEPTH: "20"
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
   before_script:
     - mkdir -p /kaniko/.docker
     - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    # Manual checkout - kaniko debug image has busybox with wget
+    - |
+      for i in 1 2 3 4 5; do
+        wget -qO- "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/archive.tar.gz?sha=${CI_COMMIT_SHA}" | tar xzf - --strip-components=1 && break
+        echo "Download attempt $i failed, retrying in $((i*5))s..."
+        sleep $((i*5))
+      done
   script:
     - /kaniko/executor
       --context ${CI_PROJECT_DIR}
