@@ -125,6 +125,7 @@ Environment variables:
 | `GET /api/v1/relays` | List relays (filter by health, nips, location, etc.; supports `limit`/`offset` pagination) |
 | `GET /api/v1/relay/?url={url}` | Single relay metadata (full NIP-11 info, health, policies) |
 | `GET /api/v1/relays/recommend` | Relay recommendations (scored by health, latency, NIPs, region) |
+| `GET /api/v1/relays/compare` | Side-by-side relay comparison (NIPs, latency, features, policies) |
 | `GET /api/v1/relay-prefs/{pubkey}` | User's relay preferences (cloistr-relays or NIP-65 fallback, 5min cache) |
 | `GET /api/v1/users/{pubkey}/relays` | User's NIP-65 relay list with health enrichment (live fetch, 5min cache) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
@@ -174,6 +175,7 @@ Environment variables:
 - [x] Single relay metadata endpoint (`GET /api/v1/relay/?url={url}`) with full NIP-11 data
 - [x] Relay preferences endpoint (`GET /api/v1/relay-prefs/{pubkey}`) for cloistr-common library
 - [x] Relay recommendations endpoint (`GET /api/v1/relays/recommend`) with scoring by health, latency, NIPs, region
+- [x] Relay comparison endpoint (`GET /api/v1/relays/compare`) with feature summaries and NIP coverage
 
 ## Production Deployment
 
@@ -202,10 +204,10 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
    - Input: `nips` (comma-separated), `region`, `exclude_auth`, `exclude_payment`, `limit`
    - Output: ranked list with score breakdown and reasons
 
-2. **Relay comparison endpoint** (`GET /api/v1/relays/compare`)
-   - Side-by-side comparison of 2+ relays
-   - Input: list of relay URLs
-   - Output: comparison table (NIPs, latency, policies, health, features)
+2. ✅ **Relay comparison endpoint** (`GET /api/v1/relays/compare`) - COMPLETE
+   - Side-by-side comparison of 2-10 relays
+   - Input: `urls` (comma-separated relay URLs)
+   - Output: full relay data, feature summary, common NIPs, NIP coverage matrix, fastest relay
 
 3. **WoT-enhanced relay recommendations** (extend existing `/api/v1/relays/recommend`)
    - Add `pubkey` param to enable WoT-based scoring
