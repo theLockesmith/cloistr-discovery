@@ -9,10 +9,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/proxy"
 
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
@@ -58,6 +61,15 @@ type Monitor struct {
 	cache  *cache.Client
 	client *http.Client
 
+	// Tor client for .onion addresses
+	torClient *http.Client
+
+	// URL filter for pre-check validation
+	urlFilter *URLFilter
+
+	// DNS cache for reducing DNS load
+	dnsCache *DNSCache
+
 	mu          sync.RWMutex
 	knownRelays map[string]bool
 	lastCheck   time.Time
@@ -67,16 +79,73 @@ type Monitor struct {
 }
 
 // NewMonitor creates a new relay monitor.
-func NewMonitor(cfg *config.Config, cache *cache.Client) *Monitor {
-	return &Monitor{
+func NewMonitor(cfg *config.Config, cacheClient *cache.Client) *Monitor {
+	torEnabled := cfg.TorProxyURL != ""
+
+	// Initialize DNS cache with configurable TTLs
+	dnsCacheCfg := DNSCacheConfig{
+		SuccessTTL:   time.Duration(cfg.DNSCacheSuccessTTL) * time.Hour,
+		NXDomainTTL:  time.Duration(cfg.DNSCacheFailureTTL) * time.Hour,
+		TimeoutTTL:   time.Duration(cfg.DNSCacheTimeoutTTL) * time.Minute,
+		ErrorTTL:     15 * time.Minute,
+		MaxBackoffMs: 300000, // 5 minutes max backoff
+	}
+
+	m := &Monitor{
 		cfg:            cfg,
-		cache:          cache,
+		cache:          cacheClient,
 		knownRelays:    make(map[string]bool),
 		discoveryInput: make(chan string, discoveryInputBufferSize),
+		urlFilter:      NewURLFilter(torEnabled),
+		dnsCache:       NewDNSCache(dnsCacheCfg),
 		client: &http.Client{
 			Timeout: time.Duration(cfg.NIP11Timeout) * time.Second,
 		},
 	}
+
+	// Setup Tor client if configured
+	if torEnabled {
+		torClient, err := createTorClient(cfg.TorProxyURL, time.Duration(cfg.NIP11Timeout)*time.Second)
+		if err != nil {
+			slog.Error("failed to create Tor client", "error", err)
+		} else {
+			m.torClient = torClient
+			slog.Info("Tor proxy enabled for .onion relays", "proxy", cfg.TorProxyURL)
+		}
+	}
+
+	return m
+}
+
+// createTorClient creates an HTTP client that routes through a Tor SOCKS5 proxy.
+func createTorClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Tor proxy URL: %w", err)
+	}
+
+	var auth *proxy.Auth
+	if parsed.User != nil {
+		password, _ := parsed.User.Password()
+		auth = &proxy.Auth{
+			User:     parsed.User.Username(),
+			Password: password,
+		}
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", parsed.Host, auth, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
+	}
+
+	transport := &http.Transport{
+		Dial: dialer.Dial,
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}, nil
 }
 
 // DiscoveryChannel returns the channel for discovery sources to send relay URLs.
@@ -252,32 +321,81 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	relays := m.GetRelays()
 	slog.Info("checking relays", "count", len(relays))
 
+	// Cleanup expired DNS cache entries periodically
+	m.dnsCache.Cleanup(ctx)
+
 	// Update monitored relays gauge
 	metrics.RelaysMonitored.Set(float64(len(relays)))
 
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, maxConcurrentHealthChecks)
+	// Filter relays and separate by check type
+	var validRelays []string
+	var torRelays []string
+	skippedFilter := 0
+	skippedDNS := 0
+
+	for _, relayURL := range relays {
+		// Apply URL filter
+		filterResult := m.urlFilter.Filter(relayURL)
+		if !filterResult.Valid {
+			slog.Debug("relay filtered out", "url", relayURL, "reason", filterResult.Reason)
+			skippedFilter++
+			continue
+		}
+
+		// Check DNS cache for the hostname
+		hostname := extractHostname(relayURL)
+		if skip, resultType, reason := m.dnsCache.ShouldSkip(hostname); skip {
+			slog.Debug("relay skipped (DNS cache)", "url", relayURL, "type", resultType, "reason", reason)
+			skippedDNS++
+			continue
+		}
+
+		if filterResult.RequiresTor {
+			torRelays = append(torRelays, relayURL)
+		} else {
+			validRelays = append(validRelays, relayURL)
+		}
+	}
+
+	slog.Info("relay filtering complete",
+		"total", len(relays),
+		"valid", len(validRelays),
+		"tor", len(torRelays),
+		"filtered", skippedFilter,
+		"dns_cached", skippedDNS,
+	)
 
 	stats := newNetworkStats()
 	var mu sync.Mutex
 
-	for _, url := range relays {
+	// Calculate stagger delay
+	var staggerDelay time.Duration
+	if m.cfg.StaggeredChecks && m.cfg.ChecksPerSecond > 0 {
+		staggerDelay = time.Second / time.Duration(m.cfg.ChecksPerSecond)
+	}
+
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, maxConcurrentHealthChecks)
+
+	// Process regular relays
+	for i, relayURL := range validRelays {
+		// Apply stagger delay
+		if staggerDelay > 0 && i > 0 {
+			select {
+			case <-ctx.Done():
+				break
+			case <-time.After(staggerDelay):
+			}
+		}
+
 		wg.Add(1)
-		go func(relayURL string) {
+		go func(url string) {
 			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			entry, err := m.checkRelay(ctx, relayURL)
-			if err != nil {
-				slog.Warn("relay check failed", "url", relayURL, "error", err)
-				// Cache as offline
-				entry = &cache.RelayEntry{
-					URL:         relayURL,
-					Health:      "offline",
-					LastChecked: time.Now(),
-				}
-			}
+			// Error is already logged and handled inside checkRelayWithDNSCache
+			entry, _ := m.checkRelayWithDNSCache(ctx, url, false)
 
 			// Collect stats under lock
 			mu.Lock()
@@ -285,9 +403,42 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 			mu.Unlock()
 
 			if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
-				slog.Error("failed to cache relay entry", "url", relayURL, "error", err)
+				slog.Error("failed to cache relay entry", "url", url, "error", err)
 			}
-		}(url)
+		}(relayURL)
+	}
+
+	// Process Tor relays (if Tor client available)
+	if m.torClient != nil {
+		for i, relayURL := range torRelays {
+			// Apply stagger delay
+			if staggerDelay > 0 && i > 0 {
+				select {
+				case <-ctx.Done():
+					break
+				case <-time.After(staggerDelay):
+				}
+			}
+
+			wg.Add(1)
+			go func(url string) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				// Error is already logged and handled inside checkRelayWithDNSCache
+				entry, _ := m.checkRelayWithDNSCache(ctx, url, true)
+
+				// Collect stats under lock
+				mu.Lock()
+				m.collectEntryStats(stats, entry)
+				mu.Unlock()
+
+				if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
+					slog.Error("failed to cache relay entry", "url", url, "error", err)
+				}
+			}(relayURL)
+		}
 	}
 
 	wg.Wait()
@@ -434,9 +585,62 @@ func (m *Monitor) updateNetworkMetrics(stats *networkStats) {
 	}
 }
 
-func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry, error) {
+// extractHostname extracts the hostname from a relay URL.
+func extractHostname(relayURL string) string {
+	parsed, err := url.Parse(relayURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
+}
+
+// checkRelayWithDNSCache wraps checkRelay with DNS caching logic.
+func (m *Monitor) checkRelayWithDNSCache(ctx context.Context, relayURL string, useTor bool) (*cache.RelayEntry, error) {
+	hostname := extractHostname(relayURL)
+
+	entry, err := m.checkRelayInternal(ctx, relayURL, useTor)
+	if err != nil {
+		// Categorize error and cache appropriately
+		errStr := err.Error()
+		if strings.Contains(errStr, "no such host") {
+			m.dnsCache.SetNXDomain(hostname, errStr)
+			slog.Debug("cached NXDOMAIN", "hostname", hostname)
+		} else if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline") {
+			m.dnsCache.SetTimeout(hostname, errStr)
+			slog.Debug("cached timeout", "hostname", hostname)
+		} else if strings.Contains(errStr, "connection refused") ||
+			strings.Contains(errStr, "network is unreachable") {
+			m.dnsCache.SetError(hostname, errStr)
+			slog.Debug("cached error", "hostname", hostname)
+		}
+
+		slog.Warn("relay check failed", "url", relayURL, "error", err)
+		// Return offline entry
+		return &cache.RelayEntry{
+			URL:         relayURL,
+			Health:      "offline",
+			LastChecked: time.Now(),
+		}, err
+	}
+
+	// Success - cache the DNS success
+	m.dnsCache.SetSuccess(hostname)
+	return entry, nil
+}
+
+// checkRelayInternal performs the actual relay check with optional Tor routing.
+func (m *Monitor) checkRelayInternal(ctx context.Context, relayURL string, useTor bool) (*cache.RelayEntry, error) {
+	client := m.client
+	if useTor && m.torClient != nil {
+		client = m.torClient
+	}
+	return m.checkRelayWithClient(ctx, relayURL, client)
+}
+
+// checkRelayWithClient performs a relay health check using the specified HTTP client.
+func (m *Monitor) checkRelayWithClient(ctx context.Context, relayURL string, client *http.Client) (*cache.RelayEntry, error) {
 	// Convert wss:// to https:// for NIP-11
-	httpURL := wsToHTTP(url)
+	httpURL := wsToHTTP(relayURL)
 
 	start := time.Now()
 	defer func() {
@@ -450,7 +654,7 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 	}
 	req.Header.Set("Accept", "application/nostr+json")
 
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
 			metrics.NIP11FetchErrorsTotal.WithLabelValues("timeout").Inc()
@@ -487,7 +691,7 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 	}
 
 	entry := &cache.RelayEntry{
-		URL:              url,
+		URL:              relayURL,
 		Name:             info.Name,
 		Description:      info.Description,
 		Pubkey:           info.Pubkey,
@@ -507,6 +711,12 @@ func (m *Monitor) checkRelay(ctx context.Context, url string) (*cache.RelayEntry
 	}
 
 	return entry, nil
+}
+
+// checkRelay is the legacy check method (kept for compatibility).
+// It delegates to the new checkRelayWithClient method.
+func (m *Monitor) checkRelay(ctx context.Context, relayURL string) (*cache.RelayEntry, error) {
+	return m.checkRelayWithClient(ctx, relayURL, m.client)
 }
 
 // normalizeURL ensures consistent URL format.

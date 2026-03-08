@@ -48,6 +48,14 @@ type Config struct {
 	AdminAPIKey   string // API key for admin auth (if set, takes precedence)
 	AdminUsername string // Basic auth username (fallback if no API key)
 	AdminPassword string // Basic auth password
+
+	// DNS/Network optimization settings
+	TorProxyURL        string // SOCKS5 proxy URL for Tor (e.g., socks5://localhost:9050)
+	DNSCacheSuccessTTL int    // Hours to cache successful DNS lookups (default: 1)
+	DNSCacheFailureTTL int    // Hours to cache NXDOMAIN results (default: 24)
+	DNSCacheTimeoutTTL int    // Minutes to cache timeout results (default: 30)
+	StaggeredChecks    bool   // Enable staggered health checks (default: true)
+	ChecksPerSecond    int    // Max relay checks per second when staggered (default: 3)
 }
 
 // Load reads configuration from environment variables.
@@ -90,6 +98,14 @@ func Load() (*Config, error) {
 		AdminAPIKey:   getEnv("ADMIN_API_KEY", ""),
 		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
 		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
+
+		// DNS/Network optimization settings
+		TorProxyURL:        getEnv("TOR_PROXY_URL", ""),
+		DNSCacheSuccessTTL: getEnvInt("DNS_CACHE_SUCCESS_TTL", 1),
+		DNSCacheFailureTTL: getEnvInt("DNS_CACHE_FAILURE_TTL", 24),
+		DNSCacheTimeoutTTL: getEnvInt("DNS_CACHE_TIMEOUT_TTL", 30),
+		StaggeredChecks:    getEnvBool("STAGGERED_CHECKS", true),
+		ChecksPerSecond:    getEnvInt("CHECKS_PER_SECOND", 3),
 	}
 
 	return cfg, nil

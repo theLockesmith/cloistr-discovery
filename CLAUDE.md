@@ -115,6 +115,12 @@ Environment variables:
 | `PEER_DISCOVERY_ENABLED` | true | Discover relays from trusted peers |
 | `ADMIN_ENABLED` | true | Enable admin dashboard |
 | `ADMIN_API_KEY` | - | API key for admin endpoints |
+| `TOR_PROXY_URL` | - | SOCKS5 proxy for .onion relays (e.g., socks5://localhost:9050) |
+| `DNS_CACHE_SUCCESS_TTL` | 1 | Hours to cache successful DNS lookups |
+| `DNS_CACHE_FAILURE_TTL` | 24 | Hours to cache NXDOMAIN results |
+| `DNS_CACHE_TIMEOUT_TTL` | 30 | Minutes to cache timeout results (with exponential backoff) |
+| `STAGGERED_CHECKS` | true | Enable staggered health checks (reduces DNS load) |
+| `CHECKS_PER_SECOND` | 3 | Max relay checks per second when staggered |
 
 ## API Endpoints
 
@@ -179,6 +185,11 @@ Environment variables:
 - [x] Relay comparison endpoint (`GET /api/v1/relays/compare`) with feature summaries and NIP coverage
 - [x] WoT-enhanced recommendations (`pubkey` param) with NIP-02 follows and network presence scoring
 - [x] Relay reviews endpoint (`GET /api/v1/relay/reviews`) with Kind 30078 events and WoT weighting
+- [x] DNS load optimization to reduce cluster DNS pressure:
+  - URL pre-filtering (skip localhost, private IPs, .local, .ts.net, invalid TLDs)
+  - DNS result caching with configurable TTL (success: 1hr, NXDOMAIN: 24hr, timeout: 30min + backoff)
+  - Staggered health checks (~3 relays/sec instead of burst)
+  - Optional Tor SOCKS5 proxy support for .onion relays
 
 ## Production Deployment
 
@@ -201,28 +212,18 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
 2. Add relay submission form to public UI
 3. Integrate with user relay list endpoint for personalized relay recommendations
 
-**Backend:**
-1. ✅ **Relay recommendations endpoint** (`GET /api/v1/relays/recommend`) - COMPLETE
-   - Scores relays by: health, latency, NIP support, region match
-   - Input: `nips` (comma-separated), `region`, `exclude_auth`, `exclude_payment`, `limit`
-   - Output: ranked list with score breakdown and reasons
+**Backend (completed):**
+- ✅ Relay recommendations endpoint (`GET /api/v1/relays/recommend`)
+- ✅ Relay comparison endpoint (`GET /api/v1/relays/compare`)
+- ✅ WoT-enhanced relay recommendations (via `pubkey` param)
+- ✅ Trusted relay reviews/ratings (Kind 30078) with WoT weighting
+- ✅ DNS load optimization (URL filtering, result caching, staggered checks, Tor support)
 
-2. ✅ **Relay comparison endpoint** (`GET /api/v1/relays/compare`) - COMPLETE
-   - Side-by-side comparison of 2-10 relays
-   - Input: `urls` (comma-separated relay URLs)
-   - Output: full relay data, feature summary, common NIPs, NIP coverage matrix, fastest relay
-
-3. ✅ **WoT-enhanced relay recommendations** - COMPLETE
-   - Added `pubkey` param to `/api/v1/relays/recommend` for WoT-based scoring
-   - Fetches NIP-02 follows, queries their NIP-65 relay lists
-   - Scores relays by network presence (how many follows use them)
-   - Network bonuses: +5pts/follow, +30pts if >10% use relay, +50pts if >25%
-
-4. ✅ **Trusted relay reviews/ratings** (Kind 30078) - COMPLETE
-   - `GET /api/v1/relay/reviews?url={url}&pubkey={pubkey}`
-   - Fetches Kind 30078 events with `relay-review:{url}` d-tag
-   - Returns ratings, comments, average rating
-   - WoT weighting: marks reviews from followed users, computes WoT-weighted average
+**Potential Future Work:**
+1. **Relay analytics dashboard** - Historical health data, uptime trends, latency graphs
+2. **Relay submission workflow** - Let users submit relays via Nostr events
+3. **Geographic load balancing** - IP geolocation for better region-based recommendations
+4. **Relay reputation system** - Track reliability over time, incorporate into scoring
 
 **Relay Preferences Integration:** (See `~/claude/coldforge/cloistr/architecture/relay-preferences.md`)
 - ✅ Phase 1: `cloistr-common` library created
