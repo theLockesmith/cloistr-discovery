@@ -33,6 +33,17 @@ const (
 	// RelayPrefsTTL is the TTL for cached relay preferences.
 	// Short TTL for cloistr-common library fast path queries.
 	RelayPrefsTTL = 5 * time.Minute
+
+	// UserContactsTTL is the TTL for cached user contact lists (NIP-02).
+	// Longer TTL since contact lists change less frequently.
+	UserContactsTTL = 15 * time.Minute
+
+	// WoTRelayScoresTTL is the TTL for cached WoT relay scores.
+	// Computed from aggregating follows' relay lists.
+	WoTRelayScoresTTL = 10 * time.Minute
+
+	// RelayReviewsTTL is the TTL for cached relay reviews.
+	RelayReviewsTTL = 30 * time.Minute
 )
 
 // Client wraps the Redis client for discovery caching.
@@ -668,6 +679,170 @@ func (c *Client) GetRelayPrefs(ctx context.Context, pubkey string) (*RelayPrefsE
 	if err := json.Unmarshal(data, &entry); err != nil {
 		metrics.CacheErrorsTotal.WithLabelValues("get_relay_prefs").Inc()
 		return nil, fmt.Errorf("failed to unmarshal relay prefs entry: %w", err)
+	}
+
+	return &entry, nil
+}
+
+// UserContactsEntry represents a cached NIP-02 contact list for a user.
+// Key pattern: user:contacts:{pubkey}
+type UserContactsEntry struct {
+	Pubkey    string    `json:"pubkey"`
+	Follows   []string  `json:"follows"` // List of followed pubkeys
+	FetchedAt time.Time `json:"fetched_at"`
+}
+
+// SetUserContacts caches a user's NIP-02 contact list.
+func (c *Client) SetUserContacts(ctx context.Context, entry *UserContactsEntry) error {
+	metrics.CacheOperationsTotal.WithLabelValues("set_user_contacts").Inc()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_user_contacts").Inc()
+		return fmt.Errorf("failed to marshal user contacts entry: %w", err)
+	}
+
+	key := "user:contacts:" + entry.Pubkey
+	if err := c.rdb.Set(ctx, key, data, UserContactsTTL).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_user_contacts").Inc()
+		return fmt.Errorf("failed to set user contacts entry: %w", err)
+	}
+
+	return nil
+}
+
+// GetUserContacts retrieves a user's cached NIP-02 contact list.
+// Returns nil, nil if not cached.
+func (c *Client) GetUserContacts(ctx context.Context, pubkey string) (*UserContactsEntry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_user_contacts").Inc()
+
+	key := "user:contacts:" + pubkey
+	data, err := c.rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_user_contacts").Inc()
+		return nil, fmt.Errorf("failed to get user contacts entry: %w", err)
+	}
+
+	var entry UserContactsEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_user_contacts").Inc()
+		return nil, fmt.Errorf("failed to unmarshal user contacts entry: %w", err)
+	}
+
+	return &entry, nil
+}
+
+// WoTRelayScoresEntry represents cached WoT relay scores for a user.
+// Key pattern: wot:scores:{pubkey}
+type WoTRelayScoresEntry struct {
+	Pubkey       string         `json:"pubkey"`
+	RelayScores  map[string]int `json:"relay_scores"`  // relay URL -> score (number of follows using it)
+	FollowsCount int            `json:"follows_count"` // Total follows analyzed
+	ComputedAt   time.Time      `json:"computed_at"`
+}
+
+// SetWoTRelayScores caches computed WoT relay scores for a user.
+func (c *Client) SetWoTRelayScores(ctx context.Context, entry *WoTRelayScoresEntry) error {
+	metrics.CacheOperationsTotal.WithLabelValues("set_wot_scores").Inc()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_wot_scores").Inc()
+		return fmt.Errorf("failed to marshal WoT scores entry: %w", err)
+	}
+
+	key := "wot:scores:" + entry.Pubkey
+	if err := c.rdb.Set(ctx, key, data, WoTRelayScoresTTL).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_wot_scores").Inc()
+		return fmt.Errorf("failed to set WoT scores entry: %w", err)
+	}
+
+	return nil
+}
+
+// GetWoTRelayScores retrieves cached WoT relay scores for a user.
+// Returns nil, nil if not cached.
+func (c *Client) GetWoTRelayScores(ctx context.Context, pubkey string) (*WoTRelayScoresEntry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_wot_scores").Inc()
+
+	key := "wot:scores:" + pubkey
+	data, err := c.rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_wot_scores").Inc()
+		return nil, fmt.Errorf("failed to get WoT scores entry: %w", err)
+	}
+
+	var entry WoTRelayScoresEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_wot_scores").Inc()
+		return nil, fmt.Errorf("failed to unmarshal WoT scores entry: %w", err)
+	}
+
+	return &entry, nil
+}
+
+// RelayReview represents a single review of a relay.
+type RelayReview struct {
+	Pubkey    string    `json:"pubkey"`     // Reviewer's pubkey
+	Rating    int       `json:"rating"`     // 1-5 stars
+	Comment   string    `json:"comment"`    // Optional review text
+	CreatedAt time.Time `json:"created_at"` // When review was created
+}
+
+// RelayReviewsEntry represents cached reviews for a relay.
+// Key pattern: relay:reviews:{url}
+type RelayReviewsEntry struct {
+	RelayURL      string        `json:"relay_url"`
+	Reviews       []RelayReview `json:"reviews"`
+	AverageRating float64       `json:"average_rating"`
+	TotalReviews  int           `json:"total_reviews"`
+	FetchedAt     time.Time     `json:"fetched_at"`
+}
+
+// SetRelayReviews caches reviews for a relay.
+func (c *Client) SetRelayReviews(ctx context.Context, entry *RelayReviewsEntry) error {
+	metrics.CacheOperationsTotal.WithLabelValues("set_relay_reviews").Inc()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_relay_reviews").Inc()
+		return fmt.Errorf("failed to marshal relay reviews entry: %w", err)
+	}
+
+	key := "relay:reviews:" + entry.RelayURL
+	if err := c.rdb.Set(ctx, key, data, RelayReviewsTTL).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("set_relay_reviews").Inc()
+		return fmt.Errorf("failed to set relay reviews entry: %w", err)
+	}
+
+	return nil
+}
+
+// GetRelayReviews retrieves cached reviews for a relay.
+// Returns nil, nil if not cached.
+func (c *Client) GetRelayReviews(ctx context.Context, relayURL string) (*RelayReviewsEntry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_relay_reviews").Inc()
+
+	key := "relay:reviews:" + relayURL
+	data, err := c.rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay_reviews").Inc()
+		return nil, fmt.Errorf("failed to get relay reviews entry: %w", err)
+	}
+
+	var entry RelayReviewsEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relay_reviews").Inc()
+		return nil, fmt.Errorf("failed to unmarshal relay reviews entry: %w", err)
 	}
 
 	return &entry, nil

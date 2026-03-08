@@ -84,6 +84,7 @@ func main() {
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
 	mux.HandleFunc("/api/v1/relays/recommend", apiServer.RecommendRelaysHandler)
 	mux.HandleFunc("/api/v1/relays/compare", apiServer.CompareRelaysHandler)
+	mux.HandleFunc("/api/v1/relay/reviews", apiServer.RelayReviewsHandler)
 	mux.HandleFunc("/api/v1/relay/", apiServer.RelayHandler)
 	mux.HandleFunc("/api/v1/relay-prefs/", apiServer.RelayPrefsHandler)
 	mux.HandleFunc("/api/v1/users/", apiServer.UserRelaysHandler)

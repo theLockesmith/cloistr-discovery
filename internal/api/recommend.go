@@ -23,17 +23,20 @@ type RecommendationResponse struct {
 
 // RecommendedRelay represents a relay with its recommendation score.
 type RecommendedRelay struct {
-	Relay   cache.RelayEntry `json:"relay"`
-	Score   int              `json:"score"`
-	Reasons []string         `json:"reasons"`
+	Relay           cache.RelayEntry `json:"relay"`
+	Score           int              `json:"score"`
+	Reasons         []string         `json:"reasons"`
+	NetworkPresence int              `json:"network_presence,omitempty"` // Number of follows using this relay
 }
 
 // RecommendationInputs captures the criteria used for recommendations.
 type RecommendationInputs struct {
+	Pubkey         string `json:"pubkey,omitempty"` // For WoT-based recommendations
 	NIPs           []int  `json:"nips,omitempty"`
 	Region         string `json:"region,omitempty"`
 	ExcludeAuth    bool   `json:"exclude_auth,omitempty"`
 	ExcludePayment bool   `json:"exclude_payment,omitempty"`
+	WoTEnabled     bool   `json:"wot_enabled,omitempty"` // Whether WoT scoring was applied
 }
 
 const (
@@ -63,10 +66,17 @@ const (
 	latencyLowThreshold    = 100
 	latencyMediumThreshold = 300
 	latencyHighThreshold   = 1000
+
+	// WoT scoring - network presence adds significant weight
+	// Each follow using the relay adds points (scaled by follow count)
+	scoreWoTPerFollow     = 5  // Points per follow using relay
+	scoreWoTNetworkBonus  = 30 // Bonus if >10% of follows use relay
+	scoreWoTMajorityBonus = 50 // Bonus if >25% of follows use relay
 )
 
 // RecommendRelaysHandler handles GET /api/v1/relays/recommend
 // Query params:
+//   - pubkey: user's pubkey for WoT-based recommendations (optional)
 //   - nips: comma-separated list of preferred NIPs (boost relays that support them)
 //   - region: preferred country code (boost relays in that region)
 //   - exclude_auth: if "true", exclude relays requiring authentication
@@ -92,6 +102,22 @@ func (s *Server) RecommendRelaysHandler(w http.ResponseWriter, r *http.Request) 
 
 	// Parse criteria
 	criteria := RecommendationInputs{}
+
+	// Parse pubkey for WoT scoring (optional)
+	var wotScores *WoTScores
+	if pubkey := q.Get("pubkey"); pubkey != "" {
+		if err := validatePubkey(pubkey); err == nil {
+			criteria.Pubkey = pubkey
+			// Fetch WoT scores
+			scores, err := s.GetWoTRelayScores(ctx, pubkey)
+			if err != nil {
+				slog.Warn("failed to get WoT scores, continuing without", "pubkey", pubkey, "error", err)
+			} else if scores != nil && len(scores.RelayScores) > 0 {
+				wotScores = scores
+				criteria.WoTEnabled = true
+			}
+		}
+	}
 
 	// Parse NIPs (with validation)
 	if nipsParam := q.Get("nips"); nipsParam != "" {
@@ -177,10 +203,35 @@ func (s *Server) RecommendRelaysHandler(w http.ResponseWriter, r *http.Request) 
 
 		// Calculate score
 		score, reasons := scoreRelay(entry, criteria)
+
+		// Add WoT scoring if enabled
+		var networkPresence int
+		if wotScores != nil {
+			if presence, ok := wotScores.RelayScores[entry.URL]; ok && presence > 0 {
+				networkPresence = presence
+				// Add points per follow
+				score += presence * scoreWoTPerFollow
+				reasons = append(reasons, "network_presence")
+
+				// Add bonus for significant network presence
+				if wotScores.FollowsCount > 0 {
+					presenceRatio := float64(presence) / float64(wotScores.FollowsCount)
+					if presenceRatio >= 0.25 {
+						score += scoreWoTMajorityBonus
+						reasons = append(reasons, "majority_network")
+					} else if presenceRatio >= 0.10 {
+						score += scoreWoTNetworkBonus
+						reasons = append(reasons, "popular_in_network")
+					}
+				}
+			}
+		}
+
 		recommendations = append(recommendations, RecommendedRelay{
-			Relay:   *entry,
-			Score:   score,
-			Reasons: reasons,
+			Relay:           *entry,
+			Score:           score,
+			Reasons:         reasons,
+			NetworkPresence: networkPresence,
 		})
 	}
 

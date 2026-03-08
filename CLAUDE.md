@@ -126,6 +126,7 @@ Environment variables:
 | `GET /api/v1/relay/?url={url}` | Single relay metadata (full NIP-11 info, health, policies) |
 | `GET /api/v1/relays/recommend` | Relay recommendations (scored by health, latency, NIPs, region) |
 | `GET /api/v1/relays/compare` | Side-by-side relay comparison (NIPs, latency, features, policies) |
+| `GET /api/v1/relay/reviews` | Relay reviews with WoT-weighted ratings (Kind 30078) |
 | `GET /api/v1/relay-prefs/{pubkey}` | User's relay preferences (cloistr-relays or NIP-65 fallback, 5min cache) |
 | `GET /api/v1/users/{pubkey}/relays` | User's NIP-65 relay list with health enrichment (live fetch, 5min cache) |
 | `GET /admin/dashboard` | Admin dashboard (requires auth) |
@@ -176,6 +177,8 @@ Environment variables:
 - [x] Relay preferences endpoint (`GET /api/v1/relay-prefs/{pubkey}`) for cloistr-common library
 - [x] Relay recommendations endpoint (`GET /api/v1/relays/recommend`) with scoring by health, latency, NIPs, region
 - [x] Relay comparison endpoint (`GET /api/v1/relays/compare`) with feature summaries and NIP coverage
+- [x] WoT-enhanced recommendations (`pubkey` param) with NIP-02 follows and network presence scoring
+- [x] Relay reviews endpoint (`GET /api/v1/relay/reviews`) with Kind 30078 events and WoT weighting
 
 ## Production Deployment
 
@@ -209,17 +212,17 @@ Deploy: `atlas kube apply coldforge-discovery --kube-context atlantis`
    - Input: `urls` (comma-separated relay URLs)
    - Output: full relay data, feature summary, common NIPs, NIP coverage matrix, fastest relay
 
-3. **WoT-enhanced relay recommendations** (extend existing `/api/v1/relays/recommend`)
-   - Add `pubkey` param to enable WoT-based scoring
-   - Use user's follows (NIP-02) to find relays where their network posts
-   - Query NIP-65 lists for followed pubkeys → rank relays by network presence
-   - Weight by trust distance (direct follows > follows-of-follows)
+3. ✅ **WoT-enhanced relay recommendations** - COMPLETE
+   - Added `pubkey` param to `/api/v1/relays/recommend` for WoT-based scoring
+   - Fetches NIP-02 follows, queries their NIP-65 relay lists
+   - Scores relays by network presence (how many follows use them)
+   - Network bonuses: +5pts/follow, +30pts if >10% use relay, +50pts if >25%
 
-4. **Trusted relay reviews/ratings** (Kind 30078)
-   - Let users rate/review relays with signed NIP-78 events (`relay-review` d-tag)
-   - Aggregate ratings weighted by WoT (reviews from trusted pubkeys count more)
-   - Surface in recommendations and relay metadata endpoints
-   - Store/cache reviews in discovery service
+4. ✅ **Trusted relay reviews/ratings** (Kind 30078) - COMPLETE
+   - `GET /api/v1/relay/reviews?url={url}&pubkey={pubkey}`
+   - Fetches Kind 30078 events with `relay-review:{url}` d-tag
+   - Returns ratings, comments, average rating
+   - WoT weighting: marks reviews from followed users, computes WoT-weighted average
 
 **Relay Preferences Integration:** (See `~/claude/coldforge/cloistr/architecture/relay-preferences.md`)
 - ✅ Phase 1: `cloistr-common` library created
