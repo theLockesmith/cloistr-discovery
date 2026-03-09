@@ -160,7 +160,7 @@ Environment variables:
 - [x] Discovery sources: NIP-65 crawling, NIP-66 consumption, peer discovery, hosted lists
 - [x] Admin interface with auth middleware and dashboard
 - [x] Docker Compose local development environment
-- [x] Deploy to Atlantis (Atlas role, Harbor image, Cloudflare Tunnel, Dragonfly auth, NetworkPolicy)
+- [x] Deploy to Atlantis (Atlas role, GitLab Registry image, Cloudflare Tunnel, Dragonfly auth, NetworkPolicy)
 - [x] Production verified: 900+ relays tracked, 400+ online, publishing to 2 relays
 - [x] **NDP stripped to Kind 30072 only** - removed inventory, activity, query, annotation packages
 - [x] Updated API: removed `/api/v1/pubkey/` and `/api/v1/activity/` endpoints
@@ -191,12 +191,25 @@ Environment variables:
   - Staggered health checks (~3 relays/sec instead of burst)
   - Optional Tor SOCKS5 proxy support for .onion relays
 
+## Container Registry (CRITICAL)
+
+**GitLab builds and publishes images. Harbor is NOT involved.**
+
+| Registry | URL | Purpose |
+|----------|-----|---------|
+| **GitLab Registry** | `registry.coldforge.xyz` | CI/CD builds push here |
+| **Harbor** | `oci.coldforge.xyz` | Pullthrough proxy for external images ONLY |
+
+- CI pushes to `registry.coldforge.xyz/coldforge/cloistr-discovery:<tag>`
+- ArgoCD Image Updater watches GitLab registry for new tags
+- **NEVER** push Cloistr service images to Harbor
+
 ## Production Deployment
 
 - **URL:** `https://discover.cloistr.xyz`
 - **Cluster:** Atlantis (OpenShift)
 - **Namespace:** `coldforge-discovery`
-- **Image:** Built and pushed by CI/CD pipeline
+- **Image:** `registry.coldforge.xyz/coldforge/cloistr-discovery` (GitLab Registry, NOT Harbor)
 - **Cache:** Dragonfly cluster at `dragonfly.dragonfly.svc.cluster.local:6379` (authenticated)
 - **Tunnel:** Cloudflare Tunnel via `cloistr-tunnel` role
 - **Atlas role:** `~/Atlas/roles/kube/coldforge-discovery/`
