@@ -79,5 +79,16 @@ build:
     - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
   script:
     - docker build -t ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${CI_REGISTRY_IMAGE}:latest .
-    - docker push ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
-    - docker push ${CI_REGISTRY_IMAGE}:latest
+    # Push with retry (registry can return "unknown blob" on first attempt)
+    - |
+      for i in 1 2 3 4 5; do
+        docker push ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} && break
+        echo "Push attempt $i failed, retrying in $((i*10))s..."
+        sleep $((i*10))
+      done
+    - |
+      for i in 1 2 3 4 5; do
+        docker push ${CI_REGISTRY_IMAGE}:latest && break
+        echo "Push attempt $i failed, retrying in $((i*10))s..."
+        sleep $((i*10))
+      done
