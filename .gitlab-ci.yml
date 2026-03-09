@@ -15,6 +15,7 @@ variables:
 
 test:
   stage: test
+  tags: [local]
   image: golang:${GO_VERSION}-alpine
   <<: *go-cache
   variables:
@@ -38,6 +39,7 @@ test:
 
 lint:
   stage: test
+  tags: [local]
   image: golangci/golangci-lint:latest
   <<: *go-cache
   before_script:
@@ -56,26 +58,16 @@ lint:
 
 build:
   stage: build
-  timeout: 90m
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
+  tags: [local]
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
+    DOCKER_TLS_CERTDIR: ""
   before_script:
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-    # Manual checkout - kaniko debug image has busybox with wget
-    - |
-      for i in 1 2 3 4 5; do
-        wget -qO- "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/archive.tar.gz?sha=${CI_COMMIT_SHA}" | tar xzf - --strip-components=1 && break
-        echo "Download attempt $i failed, retrying in $((i*5))s..."
-        sleep $((i*5))
-      done
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
   script:
-    - /kaniko/executor
-      --context ${CI_PROJECT_DIR}
-      --dockerfile ${CI_PROJECT_DIR}/Dockerfile
-      --destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
-      --destination ${CI_REGISTRY_IMAGE}:latest
-      --skip-unused-stages
-      --cache=true
-      --cache-repo=${CI_REGISTRY_IMAGE}/cache
+    - docker build -t ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${CI_REGISTRY_IMAGE}:latest .
+    - docker push ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+    - docker push ${CI_REGISTRY_IMAGE}:latest
