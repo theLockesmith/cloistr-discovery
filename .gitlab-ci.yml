@@ -59,20 +59,46 @@ lint:
 build:
   stage: build
   tags: [local]
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
+  image: docker:latest
+  services:
+    - docker:dind
   variables:
-    # Re-enable git checkout for Kaniko since it needs the source
-    GIT_STRATEGY: clone
-    GIT_DEPTH: "20"
+    DOCKER_HOST: unix:///var/run/docker.sock
+    DOCKER_TLS_CERTDIR: ""
   before_script:
-    # Configure registry authentication
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    # Manual checkout since GIT_STRATEGY: none
+    - apk add --no-cache git
+    - |
+      for i in 1 2 3 4 5; do
+        git clone --depth 20 --branch ${CI_COMMIT_REF_NAME} ${CI_REPOSITORY_URL} /tmp/src && break
+        echo "Clone attempt $i failed, retrying in $((i*5))s..."
+        sleep $((i*5))
+      done
+    - cp -r /tmp/src/. .
+    - git checkout ${CI_COMMIT_SHA}
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
   script:
-    - /kaniko/executor
-      --context "${CI_PROJECT_DIR}"
-      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-      --destination "${CI_REGISTRY_IMAGE}:latest"
+    - docker build -t ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${CI_REGISTRY_IMAGE}:latest .
+    # Push with retry (registry can return "unknown blob" on first attempt)
+    - |
+      success=false
+      for i in 1 2 3 4 5; do
+        if docker push ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}; then
+          success=true
+          break
+        fi
+        echo "Push attempt $i failed, retrying in $((i*10))s..."
+        sleep $((i*10))
+      done
+      $success || { echo "ERROR: All push attempts failed for ${CI_COMMIT_SHORT_SHA}"; exit 1; }
+    - |
+      success=false
+      for i in 1 2 3 4 5; do
+        if docker push ${CI_REGISTRY_IMAGE}:latest; then
+          success=true
+          break
+        fi
+        echo "Push attempt $i failed, retrying in $((i*10))s..."
+        sleep $((i*10))
+      done
+      $success || { echo "ERROR: All push attempts failed for latest"; exit 1; }
