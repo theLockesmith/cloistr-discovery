@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +221,49 @@ func TestRelayPrefsHandler_ContentType(t *testing.T) {
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %s", contentType)
+	}
+}
+
+func TestRelayPrefsHandler_EmptyRelaysIsArrayNotNull(t *testing.T) {
+	// Verify that empty relays returns [] not null in JSON
+	// This is important for client compatibility
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+
+	cacheClient, err := cache.New("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatalf("failed to create cache client: %v", err)
+	}
+
+	cfg := &config.Config{
+		Port:     8080,
+		LogLevel: "info",
+		CacheURL: "redis://" + mr.Addr(),
+	}
+
+	server := New(cfg, cacheClient)
+
+	pubkey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay-prefs/"+pubkey, nil)
+	w := httptest.NewRecorder()
+
+	server.RelayPrefsHandler(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Read raw body to check JSON format
+	body := w.Body.String()
+	if !strings.Contains(body, `"relays":[]`) {
+		t.Errorf("expected JSON to contain \"relays\":[], got: %s", body)
+	}
+	if strings.Contains(body, `"relays":null`) {
+		t.Errorf("JSON should not contain \"relays\":null, got: %s", body)
 	}
 }
 

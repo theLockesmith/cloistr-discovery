@@ -103,8 +103,13 @@ func (s *Server) RelayPrefsHandler(w http.ResponseWriter, r *http.Request) {
 	if fetchErr != nil {
 		slog.Error("failed to fetch relay prefs", "pubkey", pubkey, "error", fetchErr)
 		// On error, still return default
-		relays = nil
+		relays = []RelayPrefsEntry{}
 		source = "default"
+	}
+
+	// Ensure relays is never nil (JSON serializes nil as null, but clients expect [])
+	if relays == nil {
+		relays = []RelayPrefsEntry{}
 	}
 
 	cachedAt := time.Now()
