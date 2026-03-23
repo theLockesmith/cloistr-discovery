@@ -81,17 +81,6 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ## Phase 2: Enhanced Monitoring (Next)
 
-### Geographic Distribution
-
-**Status:** UI exists (`RelayMap.tsx`), backend needs GeoIP integration.
-
-| Task | Description |
-|------|-------------|
-| Integrate GeoIP library | MaxMind GeoLite2 or similar |
-| DNS resolution for relay hosts | Extract IP from relay URL |
-| Populate `country_code` in cache | Set during health checks |
-| Add `g` geohash tag to 30166 events | NIP-52 geohash format |
-
 ### Historical Health Trends
 
 | Task | Description |
