@@ -72,6 +72,35 @@ var (
 	})
 )
 
+// NIP-66 publisher metrics
+var (
+	NIP66PublishCyclesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "discovery_nip66_publish_cycles_total",
+		Help: "Total number of NIP-66 publish cycles completed",
+	})
+
+	NIP66EventsPublished = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "discovery_nip66_events_published_total",
+		Help: "Total number of NIP-66 events published",
+	}, []string{"kind", "relay"}) // kind: "10166" or "30166"
+
+	NIP66PublishErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "discovery_nip66_publish_errors_total",
+		Help: "Total number of NIP-66 publish errors",
+	}, []string{"kind", "relay", "reason"})
+
+	NIP66PublishDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "discovery_nip66_publish_duration_seconds",
+		Help:    "Time taken to complete a NIP-66 publish cycle",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 8),
+	})
+
+	NIP66RelaysPublished = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "discovery_nip66_relays_published",
+		Help: "Number of relays published in last NIP-66 cycle",
+	})
+)
+
 // NIP-65 user relay list lookup metrics
 var (
 	NIP65UserLookupTotal = promauto.NewCounterVec(prometheus.CounterOpts{

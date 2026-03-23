@@ -330,6 +330,12 @@ func (p *Publisher) GetPublicKey() string {
 	return p.pk
 }
 
+// GetPrivateKey returns the publisher's private key.
+// Used to share the key with NIP-66 publisher.
+func (p *Publisher) GetPrivateKey() string {
+	return p.sk
+}
+
 // GetLastPublish returns the time of the last publish cycle.
 func (p *Publisher) GetLastPublish() time.Time {
 	p.mu.RLock()

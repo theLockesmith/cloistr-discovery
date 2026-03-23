@@ -9,7 +9,7 @@
 | Document | Purpose |
 |----------|---------|
 | `~/claude/coldforge/cloistr/CLAUDE.md` | Cloistr project rules |
-| [docs/reference.md](docs/reference.md) | Full API, config, deployment |
+| [ROADMAP.md](ROADMAP.md) | Discovery-specific roadmap |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment guide |
 
 ## Autonomous Work Mode

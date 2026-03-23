@@ -28,11 +28,15 @@ type Config struct {
 	ActivityTTL int // Minutes before activity expires
 
 	// Publishing settings
-	PublishEnabled  bool     // Enable publishing kind 30069 events
+	PublishEnabled  bool     // Enable publishing kind 30072 events
 	PublishRelays   []string // Relays to publish discovery events to
 	PublishInterval int      // Minutes between publish cycles
 	PrivateKey      string   // hex or nsec private key for signing events
 	BunkerURL       string   // NIP-46 bunker URL for signing (alternative to PrivateKey)
+
+	// NIP-66 Monitor Publishing settings
+	NIP66PublishEnabled  bool // Enable publishing NIP-66 monitor events (kinds 10166, 30166)
+	NIP66PublishInterval int  // Seconds between kind 30166 publications (also used in frequency tag)
 
 	// Discovery source settings
 	HostedRelayListURL      string   // URL to fetch relay list from (JSON or newline-separated)
@@ -83,6 +87,10 @@ func Load() (*Config, error) {
 		PublishInterval: getEnvInt("PUBLISH_INTERVAL", 10),
 		PrivateKey:      getEnv("NOSTR_PRIVATE_KEY", ""),
 		BunkerURL:       getEnv("BUNKER_URL", ""),
+
+		// NIP-66 Monitor Publishing settings
+		NIP66PublishEnabled:  getEnvBool("NIP66_PUBLISH_ENABLED", false),
+		NIP66PublishInterval: getEnvInt("NIP66_PUBLISH_INTERVAL", 3600), // 1 hour default
 
 		// Discovery source settings
 		HostedRelayListURL:      getEnv("HOSTED_RELAY_LIST_URL", ""),

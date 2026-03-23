@@ -170,6 +170,27 @@ func main() {
 		}
 	}
 
+	// Start NIP-66 publisher goroutine (if enabled)
+	if cfg.NIP66PublishEnabled && eventPublisher != nil {
+		nip66Publisher := publisher.NewNIP66Publisher(
+			cfg,
+			cacheClient,
+			eventPublisher.GetPrivateKey(),
+			eventPublisher.GetPublicKey(),
+		)
+		go func() {
+			slog.Info("starting NIP-66 publisher")
+			nip66Publisher.Start(bgCtx)
+		}()
+
+		// Register NIP-66 publisher with health registry
+		healthRegistry.Register(&health.Worker{
+			Name:             "nip66-publisher",
+			Check:            nip66Publisher.GetLastPublish,
+			ExpectedInterval: time.Duration(cfg.NIP66PublishInterval) * time.Second,
+		})
+	}
+
 	// Initialize admin interface (if enabled)
 	if cfg.AdminEnabled {
 		adminServer := admin.NewServer(cfg, cacheClient, relayMonitor, discoveryCoordinator)
