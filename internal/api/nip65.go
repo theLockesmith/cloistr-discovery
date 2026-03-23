@@ -15,7 +15,6 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
@@ -110,46 +109,13 @@ func (s *Server) UserRelaysHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		metrics.NIP65UserLookupTotal.WithLabelValues("true").Inc()
 	} else {
-		// Cache miss - fetch from relays
+		// Cache miss - return 404 immediately instead of blocking on relay fetches
+		// The NIP-65 crawler will eventually populate the cache for active users
 		metrics.NIP65UserLookupTotal.WithLabelValues("false").Inc()
-
-		var fetchErr error
-		entries, fetchErrors, fetchErr = s.fetchUserNIP65(ctx, pubkey)
-		if fetchErr != nil {
-			if errors.Is(fetchErr, ErrNoEventsFound) {
-				metrics.NIP65UserLookupErrors.WithLabelValues("no_events").Inc()
-				http.Error(w, "no relay list found for pubkey", http.StatusNotFound)
-				return
-			}
-			if errors.Is(fetchErr, context.DeadlineExceeded) {
-				metrics.NIP65UserLookupErrors.WithLabelValues("timeout").Inc()
-				http.Error(w, "relay fetch timeout", http.StatusGatewayTimeout)
-				return
-			}
-			metrics.NIP65UserLookupErrors.WithLabelValues("fetch_error").Inc()
-			slog.Error("failed to fetch NIP-65 data", "pubkey", pubkey, "error", fetchErr)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		fetchedAt = time.Now()
-
-		// Cache the result
-		cacheEntry := &cache.UserNIP65Entry{
-			Pubkey:    pubkey,
-			FetchedAt: fetchedAt,
-			Relays:    make([]cache.UserRelayData, len(entries)),
-		}
-		for i, e := range entries {
-			cacheEntry.Relays[i] = cache.UserRelayData{
-				URL:   e.URL,
-				Read:  e.Read,
-				Write: e.Write,
-			}
-		}
-		if err := s.cache.SetUserNIP65(ctx, cacheEntry); err != nil {
-			slog.Error("failed to cache NIP-65 data", "pubkey", pubkey, "error", err)
-		}
+		metrics.NIP65UserLookupErrors.WithLabelValues("cache_miss").Inc()
+		slog.Debug("NIP-65 cache miss", "pubkey", pubkey[:16]+"...")
+		http.Error(w, "no relay list found for pubkey", http.StatusNotFound)
+		return
 	}
 
 	// Enrich with health data from monitored relays
