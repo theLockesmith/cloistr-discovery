@@ -28,7 +28,7 @@
 
 ---
 
-## Phase 1: NIP-66 Publishing (Next)
+## Phase 1: NIP-66 Publishing (Complete)
 
 Become a relay monitor by publishing NIP-66 events.
 
@@ -75,9 +75,11 @@ NIP66_PUBLISH_INTERVAL=3600  # seconds (default: 1 hour)
 
 Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30072 publisher).
 
+**Note:** The discovery service pubkey must be added to the relay's `ALLOWED_PUBKEYS` to bypass WoT PoW requirements. See `cloistr-config/base/relay/configmap-relay.yaml`.
+
 ---
 
-## Phase 2: Enhanced Monitoring
+## Phase 2: Enhanced Monitoring (Next)
 
 ### Geographic Distribution
 
@@ -127,4 +129,4 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ---
 
-**Last Updated:** 2026-03-22
+**Last Updated:** 2026-03-23
