@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oschwald/geoip2-golang"
 	"golang.org/x/net/proxy"
 
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
@@ -70,6 +72,9 @@ type Monitor struct {
 	// DNS cache for reducing DNS load
 	dnsCache *DNSCache
 
+	// GeoIP database for country code lookup
+	geoipDB *geoip2.Reader
+
 	mu          sync.RWMutex
 	knownRelays map[string]bool
 	lastCheck   time.Time
@@ -114,6 +119,15 @@ func NewMonitor(cfg *config.Config, cacheClient *cache.Client) *Monitor {
 		}
 	}
 
+	// Load GeoIP database for country code lookup
+	geoipDB, err := geoip2.Open("data/GeoLite2-Country.mmdb")
+	if err != nil {
+		slog.Warn("failed to load GeoIP database, country codes will not be populated", "error", err)
+	} else {
+		m.geoipDB = geoipDB
+		slog.Info("GeoIP database loaded for country code lookups")
+	}
+
 	return m
 }
 
@@ -146,6 +160,14 @@ func createTorClient(proxyURL string, timeout time.Duration) (*http.Client, erro
 		Transport: transport,
 		Timeout:   timeout,
 	}, nil
+}
+
+// Close closes the GeoIP database and releases resources.
+func (m *Monitor) Close() error {
+	if m.geoipDB != nil {
+		return m.geoipDB.Close()
+	}
+	return nil
 }
 
 // DiscoveryChannel returns the channel for discovery sources to send relay URLs.
@@ -708,6 +730,24 @@ func (m *Monitor) checkRelayWithClient(ctx context.Context, relayURL string, cli
 		ModerationPolicy: info.ModerationPolicy,
 		Community:        info.Community,
 		Languages:        info.Languages,
+	}
+
+	// Add country code via GeoIP lookup
+	if m.geoipDB != nil {
+		// Extract hostname from URL
+		parsed, err := url.Parse(relayURL)
+		if err == nil && parsed.Host != "" {
+			hostname := parsed.Hostname()
+			// Perform DNS lookup to get IP
+			if ips, err := net.LookupHost(hostname); err == nil && len(ips) > 0 {
+				// Use first IP address
+				if ip := net.ParseIP(ips[0]); ip != nil {
+					if record, err := m.geoipDB.Country(ip); err == nil && record.Country.IsoCode != "" {
+						entry.CountryCode = record.Country.IsoCode
+					}
+				}
+			}
+		}
 	}
 
 	return entry, nil
