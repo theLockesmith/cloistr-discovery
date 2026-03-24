@@ -31,6 +31,9 @@ RUN apk add --no-cache ca-certificates tzdata
 # Copy binary from builder
 COPY --from=builder /discovery /app/discovery
 
+# Copy GeoIP database
+COPY --from=builder /app/data/GeoLite2-Country.mmdb /app/data/GeoLite2-Country.mmdb
+
 # Create non-root user
 RUN addgroup -g 1000 discovery && \
     adduser -u 1000 -G discovery -s /bin/sh -D discovery
