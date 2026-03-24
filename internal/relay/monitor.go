@@ -261,6 +261,9 @@ func (m *Monitor) handleDiscoveredRelay(ctx context.Context, url string) {
 			}
 		}
 
+		// Record health check and calculate uptime
+		m.recordHealthCheckAndCalculateUptime(ctx, entry)
+
 		if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
 			slog.Error("failed to cache relay entry", "url", url, "error", err)
 		}
@@ -419,6 +422,9 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 			// Error is already logged and handled inside checkRelayWithDNSCache
 			entry, _ := m.checkRelayWithDNSCache(ctx, url, false)
 
+			// Record health check and calculate uptime
+			m.recordHealthCheckAndCalculateUptime(ctx, entry)
+
 			// Collect stats under lock
 			mu.Lock()
 			m.collectEntryStats(stats, entry)
@@ -450,6 +456,9 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 
 				// Error is already logged and handled inside checkRelayWithDNSCache
 				entry, _ := m.checkRelayWithDNSCache(ctx, url, true)
+
+				// Record health check and calculate uptime
+				m.recordHealthCheckAndCalculateUptime(ctx, entry)
 
 				// Collect stats under lock
 				mu.Lock()
@@ -751,6 +760,28 @@ func (m *Monitor) checkRelayWithClient(ctx context.Context, relayURL string, cli
 	}
 
 	return entry, nil
+}
+
+// recordHealthCheckAndCalculateUptime records the health check result and calculates uptime.
+// This should be called after checking a relay and before caching the entry.
+func (m *Monitor) recordHealthCheckAndCalculateUptime(ctx context.Context, entry *cache.RelayEntry) {
+	if entry == nil {
+		return
+	}
+
+	// Record health check (online and degraded count as success, offline is failure)
+	success := entry.Health == "online" || entry.Health == "degraded"
+	if err := m.cache.RecordHealthCheck(ctx, entry.URL, success, entry.LastChecked); err != nil {
+		slog.Warn("failed to record health check", "url", entry.URL, "error", err)
+	}
+
+	// Calculate uptime from last 24 hours of checks
+	uptime, err := m.cache.GetUptimePercent(ctx, entry.URL, 24*time.Hour)
+	if err != nil {
+		slog.Warn("failed to get uptime percent", "url", entry.URL, "error", err)
+	} else if uptime != nil {
+		entry.UptimePercent = uptime
+	}
 }
 
 // checkRelay is the legacy check method (kept for compatibility).

@@ -103,6 +103,7 @@ type RelayEntry struct {
 	Version         string    `json:"version"`
 	Health          string    `json:"health"` // online, degraded, offline
 	LatencyMs       int       `json:"latency_ms"`
+	UptimePercent   *float64  `json:"uptime_percent,omitempty"` // uptime percentage over last 24h
 	LastChecked     time.Time `json:"last_checked"`
 	CountryCode     string    `json:"country_code,omitempty"`
 	PaymentRequired bool      `json:"payment_required"`
@@ -846,4 +847,78 @@ func (c *Client) GetRelayReviews(ctx context.Context, relayURL string) (*RelayRe
 	}
 
 	return &entry, nil
+}
+
+// RecordHealthCheck records a health check result for uptime tracking.
+// Uses a sorted set with timestamp as score and success/failure as member.
+// Key pattern: relay:health:history:{url}
+func (c *Client) RecordHealthCheck(ctx context.Context, relayURL string, success bool, timestamp time.Time) error {
+	metrics.CacheOperationsTotal.WithLabelValues("record_health_check").Inc()
+
+	key := "relay:health:history:" + relayURL
+	score := float64(timestamp.Unix())
+
+	// Store "1" for successful check, "0" for failed
+	member := "0"
+	if success {
+		member = "1"
+	}
+
+	// Add the health check result
+	if err := c.rdb.ZAdd(ctx, key, redis.Z{
+		Score:  score,
+		Member: member + ":" + fmt.Sprintf("%d", timestamp.Unix()),
+	}).Err(); err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("record_health_check").Inc()
+		return fmt.Errorf("failed to record health check: %w", err)
+	}
+
+	// Keep only last 24 hours of data
+	cutoff := float64(time.Now().Add(-24 * time.Hour).Unix())
+	if err := c.rdb.ZRemRangeByScore(ctx, key, "-inf", fmt.Sprintf("%f", cutoff)).Err(); err != nil {
+		// Log but don't fail on cleanup error
+		fmt.Printf("warning: failed to clean old health checks for %s: %v\n", relayURL, err)
+	}
+
+	// Set TTL to 25 hours (slightly longer than our window)
+	c.rdb.Expire(ctx, key, 25*time.Hour)
+
+	return nil
+}
+
+// GetUptimePercent calculates uptime percentage from health check history.
+// Returns nil if there's insufficient data (less than 2 checks).
+func (c *Client) GetUptimePercent(ctx context.Context, relayURL string, window time.Duration) (*float64, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_uptime_percent").Inc()
+
+	key := "relay:health:history:" + relayURL
+
+	// Get all checks within the time window
+	cutoff := float64(time.Now().Add(-window).Unix())
+	checks, err := c.rdb.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: fmt.Sprintf("%f", cutoff),
+		Max: "+inf",
+	}).Result()
+
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_uptime_percent").Inc()
+		return nil, fmt.Errorf("failed to get health check history: %w", err)
+	}
+
+	// Need at least 2 checks to calculate meaningful uptime
+	if len(checks) < 2 {
+		return nil, nil
+	}
+
+	// Count successful checks
+	successCount := 0
+	for _, check := range checks {
+		// Check format is "1:timestamp" or "0:timestamp"
+		if len(check) > 0 && check[0] == '1' {
+			successCount++
+		}
+	}
+
+	uptime := float64(successCount) / float64(len(checks)) * 100.0
+	return &uptime, nil
 }
