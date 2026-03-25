@@ -416,3 +416,92 @@ func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(SingleRelayResponse{Relay: entry})
 }
+
+// RelayHistoryResponse contains uptime history for a relay.
+type RelayHistoryResponse struct {
+	URL           string   `json:"url"`
+	Uptime24h     *float64 `json:"uptime_24h,omitempty"`
+	Uptime7d      *float64 `json:"uptime_7d,omitempty"`
+	Uptime30d     *float64 `json:"uptime_30d,omitempty"`
+	CheckCount24h int      `json:"check_count_24h"`
+	CheckCount7d  int      `json:"check_count_7d"`
+	CheckCount30d int      `json:"check_count_30d"`
+	LastChecked   *string  `json:"last_checked,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+// RelayHistoryHandler handles GET /api/v1/relay/history/?url=...
+// Returns uptime percentages for 24h, 7d, and 30d windows.
+func (s *Server) RelayHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	defer func() {
+		metrics.QueryDurationSeconds.WithLabelValues("relay_history").Observe(time.Since(start).Seconds())
+	}()
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	metrics.QueriesTotal.WithLabelValues("relay_history").Inc()
+
+	// Get relay URL from query parameter or path
+	var relayURL string
+	if urlParam := r.URL.Query().Get("url"); urlParam != "" {
+		relayURL = urlParam
+	} else {
+		// Extract from path: /api/v1/relay/history/wss://...
+		path := r.URL.Path
+		prefix := "/api/v1/relay/history/"
+		if strings.HasPrefix(path, prefix) {
+			relayURL = path[len(prefix):]
+		}
+	}
+
+	if relayURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "relay URL required"})
+		return
+	}
+
+	// Validate URL format
+	if !strings.HasPrefix(relayURL, "wss://") && !strings.HasPrefix(relayURL, "ws://") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "invalid relay URL: must start with wss:// or ws://"})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get uptime stats
+	stats, err := s.cache.GetUptimeStats(ctx, relayURL)
+	if err != nil {
+		slog.Error("failed to get uptime stats", "url", relayURL, "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "internal server error"})
+		return
+	}
+
+	response := RelayHistoryResponse{
+		URL:           relayURL,
+		Uptime24h:     stats.Uptime24h,
+		Uptime7d:      stats.Uptime7d,
+		Uptime30d:     stats.Uptime30d,
+		CheckCount24h: stats.CheckCount24h,
+		CheckCount7d:  stats.CheckCount7d,
+		CheckCount30d: stats.CheckCount30d,
+	}
+
+	// Get last checked time from relay entry
+	entry, _ := s.cache.GetRelayEntry(ctx, relayURL)
+	if entry != nil && !entry.LastChecked.IsZero() {
+		lastChecked := entry.LastChecked.Format(time.RFC3339)
+		response.LastChecked = &lastChecked
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

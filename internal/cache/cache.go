@@ -873,15 +873,15 @@ func (c *Client) RecordHealthCheck(ctx context.Context, relayURL string, success
 		return fmt.Errorf("failed to record health check: %w", err)
 	}
 
-	// Keep only last 24 hours of data
-	cutoff := float64(time.Now().Add(-24 * time.Hour).Unix())
+	// Keep only last 30 days of data
+	cutoff := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
 	if err := c.rdb.ZRemRangeByScore(ctx, key, "-inf", fmt.Sprintf("%f", cutoff)).Err(); err != nil {
 		// Log but don't fail on cleanup error
 		fmt.Printf("warning: failed to clean old health checks for %s: %v\n", relayURL, err)
 	}
 
-	// Set TTL to 25 hours (slightly longer than our window)
-	c.rdb.Expire(ctx, key, 25*time.Hour)
+	// Set TTL to 31 days (slightly longer than our window)
+	c.rdb.Expire(ctx, key, 31*24*time.Hour)
 
 	return nil
 }
@@ -921,4 +921,95 @@ func (c *Client) GetUptimePercent(ctx context.Context, relayURL string, window t
 
 	uptime := float64(successCount) / float64(len(checks)) * 100.0
 	return &uptime, nil
+}
+
+// UptimeStats contains uptime percentages and check counts for multiple time windows.
+type UptimeStats struct {
+	Uptime24h     *float64 `json:"uptime_24h,omitempty"`
+	Uptime7d      *float64 `json:"uptime_7d,omitempty"`
+	Uptime30d     *float64 `json:"uptime_30d,omitempty"`
+	CheckCount24h int      `json:"check_count_24h"`
+	CheckCount7d  int      `json:"check_count_7d"`
+	CheckCount30d int      `json:"check_count_30d"`
+}
+
+// GetUptimeStats returns uptime percentages for 24h, 7d, and 30d windows.
+func (c *Client) GetUptimeStats(ctx context.Context, relayURL string) (*UptimeStats, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_uptime_stats").Inc()
+
+	key := "relay:health:history:" + relayURL
+
+	// Get all checks from the last 30 days
+	cutoff30d := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+	checks, err := c.rdb.ZRangeByScoreWithScores(ctx, key, &redis.ZRangeBy{
+		Min: fmt.Sprintf("%f", cutoff30d),
+		Max: "+inf",
+	}).Result()
+
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_uptime_stats").Inc()
+		return nil, fmt.Errorf("failed to get health check history: %w", err)
+	}
+
+	stats := &UptimeStats{}
+
+	if len(checks) == 0 {
+		return stats, nil
+	}
+
+	// Time boundaries
+	now := time.Now()
+	cutoff24h := now.Add(-24 * time.Hour).Unix()
+	cutoff7d := now.Add(-7 * 24 * time.Hour).Unix()
+
+	// Count successes for each window
+	var success24h, total24h, success7d, total7d, success30d, total30d int
+
+	for _, z := range checks {
+		timestamp := int64(z.Score)
+		member := z.Member.(string)
+		isSuccess := len(member) > 0 && member[0] == '1'
+
+		// 30-day window (all checks)
+		total30d++
+		if isSuccess {
+			success30d++
+		}
+
+		// 7-day window
+		if timestamp >= cutoff7d {
+			total7d++
+			if isSuccess {
+				success7d++
+			}
+		}
+
+		// 24-hour window
+		if timestamp >= cutoff24h {
+			total24h++
+			if isSuccess {
+				success24h++
+			}
+		}
+	}
+
+	stats.CheckCount24h = total24h
+	stats.CheckCount7d = total7d
+	stats.CheckCount30d = total30d
+
+	// Calculate percentages (require at least 2 checks for meaningful data)
+	if total24h >= 2 {
+		uptime := float64(success24h) / float64(total24h) * 100.0
+		stats.Uptime24h = &uptime
+	}
+	if total7d >= 2 {
+		uptime := float64(success7d) / float64(total7d) * 100.0
+		stats.Uptime7d = &uptime
+	}
+	if total30d >= 2 {
+		uptime := float64(success30d) / float64(total30d) * 100.0
+		stats.Uptime30d = &uptime
+	}
+
+	return stats, nil
 }
