@@ -110,6 +110,20 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ---
 
+## Status: Feature Complete
+
+Backend is feature complete as of 2026-03-25. The service:
+
+- Discovers relays from multiple sources (NIP-65, NIP-66, peers, hosted lists)
+- Monitors health, latency, and NIP support
+- Publishes status via NIP-66 (kind 30166) and NDP (kind 30072)
+- Provides comprehensive query APIs with filtering, recommendations, and WoT integration
+- Tracks 30-day historical uptime data
+
+Remaining UI work (uptime graphs, operator profiles) belongs in a frontend project.
+
+---
+
 ## Not In Scope
 
 | Feature | Belongs In |
