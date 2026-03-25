@@ -83,12 +83,12 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ### Historical Health Trends
 
-| Task | Description |
-|------|-------------|
-| Store health check history | Time-series data (consider TimescaleDB or simple table) |
-| Calculate uptime percentages | Rolling 24h, 7d, 30d |
-| API endpoint for history | `/api/v1/relay/{url}/history` |
-| UI visualization | Uptime graph/sparkline |
+| Task | Description | Status |
+|------|-------------|--------|
+| Store health check history | Redis sorted sets, 30-day retention | ✓ |
+| Calculate uptime percentages | Rolling 24h, 7d, 30d | ✓ |
+| API endpoint for history | `/api/v1/relay/history/?url=` | ✓ |
+| UI visualization | Uptime graph/sparkline | Pending (UI) |
 
 ### Relay Operator Verification
 
