@@ -3,12 +3,14 @@ package discovery
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/backoff"
+	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
 	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
@@ -16,6 +18,7 @@ import (
 // NIP66Consumer discovers relays by consuming NIP-66 relay monitor events (kind 30166).
 type NIP66Consumer struct {
 	cfg     *config.Config
+	cache   *cache.Client
 	output  chan<- DiscoveredRelay
 	backoff *backoff.Tracker
 
@@ -24,9 +27,10 @@ type NIP66Consumer struct {
 }
 
 // NewNIP66Consumer creates a new NIP-66 consumer.
-func NewNIP66Consumer(cfg *config.Config, output chan<- DiscoveredRelay) *NIP66Consumer {
+func NewNIP66Consumer(cfg *config.Config, cacheClient *cache.Client, output chan<- DiscoveredRelay) *NIP66Consumer {
 	return &NIP66Consumer{
 		cfg:     cfg,
+		cache:   cacheClient,
 		output:  output,
 		backoff: backoff.DefaultTracker(),
 	}
@@ -119,7 +123,7 @@ eventLoop:
 	return true
 }
 
-// processNIP66Event extracts relay URLs from a NIP-66 event.
+// processNIP66Event extracts relay URLs and health data from a NIP-66 event.
 func (n *NIP66Consumer) processNIP66Event(ctx context.Context, event *nostr.Event) {
 	if event.Kind != 30166 {
 		return
@@ -127,12 +131,20 @@ func (n *NIP66Consumer) processNIP66Event(ctx context.Context, event *nostr.Even
 
 	metrics.NIP66EventsConsumed.Inc()
 
-	// NIP-66 uses "d" tag for the relay URL
+	// NIP-66 uses "d" tag for the relay URL, "rtt-open" for connection latency
 	var relayURL string
+	var latencyMs int
 	for _, tag := range event.Tags {
-		if len(tag) >= 2 && tag[0] == "d" {
+		if len(tag) < 2 {
+			continue
+		}
+		switch tag[0] {
+		case "d":
 			relayURL = tag[1]
-			break
+		case "rtt-open":
+			if rtt, err := strconv.Atoi(tag[1]); err == nil {
+				latencyMs = rtt
+			}
 		}
 	}
 
@@ -144,12 +156,58 @@ func (n *NIP66Consumer) processNIP66Event(ctx context.Context, event *nostr.Even
 	n.lastConsume = time.Now()
 	n.mu.Unlock()
 
+	// Store external monitor report if we have latency data
+	if n.cache != nil && latencyMs > 0 {
+		n.storeExternalMonitorReport(ctx, relayURL, event.PubKey, latencyMs)
+	}
+
 	select {
 	case <-ctx.Done():
 		return
 	case n.output <- DiscoveredRelay{URL: relayURL, Source: "nip66"}:
 		metrics.NIP66RelaysDiscovered.Inc()
-		slog.Debug("discovered relay from NIP-66", "url", relayURL, "monitor", event.PubKey[:16])
+		slog.Debug("discovered relay from NIP-66", "url", relayURL, "monitor", event.PubKey[:16], "latency_ms", latencyMs)
+	}
+}
+
+// storeExternalMonitorReport stores health data from an external NIP-66 monitor.
+func (n *NIP66Consumer) storeExternalMonitorReport(ctx context.Context, relayURL, monitorPubkey string, latencyMs int) {
+	entry, err := n.cache.GetRelayEntry(ctx, relayURL)
+	if err != nil {
+		slog.Debug("failed to get relay entry for external monitor report", "url", relayURL, "error", err)
+		return
+	}
+	if entry == nil {
+		// Relay not in our cache yet, will be added by the monitor
+		return
+	}
+
+	// Update or add the external monitor report
+	report := cache.ExternalMonitorReport{
+		MonitorPubkey: monitorPubkey,
+		LatencyMs:     latencyMs,
+		LastSeen:      time.Now(),
+	}
+
+	found := false
+	for i, existing := range entry.ExternalMonitors {
+		if existing.MonitorPubkey == monitorPubkey {
+			entry.ExternalMonitors[i] = report
+			found = true
+			break
+		}
+	}
+	if !found {
+		entry.ExternalMonitors = append(entry.ExternalMonitors, report)
+	}
+
+	// Keep only the 10 most recent monitors (to prevent unbounded growth)
+	if len(entry.ExternalMonitors) > 10 {
+		entry.ExternalMonitors = entry.ExternalMonitors[len(entry.ExternalMonitors)-10:]
+	}
+
+	if err := n.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
+		slog.Debug("failed to store external monitor report", "url", relayURL, "error", err)
 	}
 }
 

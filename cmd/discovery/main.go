@@ -90,6 +90,7 @@ func main() {
 	mux.HandleFunc("/api/v1/relay/", apiServer.RelayHandler)
 	mux.HandleFunc("/api/v1/relay-prefs/", apiServer.RelayPrefsHandler)
 	mux.HandleFunc("/api/v1/users/", apiServer.UserRelaysHandler)
+	mux.HandleFunc("/api/v1/operators/", apiServer.OperatorRelaysHandler)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

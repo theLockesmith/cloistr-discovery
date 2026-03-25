@@ -505,3 +505,80 @@ func (s *Server) RelayHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+// OperatorRelaysResponse contains relays operated by a pubkey.
+type OperatorRelaysResponse struct {
+	Pubkey string             `json:"pubkey"`
+	Relays []cache.RelayEntry `json:"relays"`
+	Total  int                `json:"total"`
+	Error  string             `json:"error,omitempty"`
+}
+
+// OperatorRelaysHandler handles GET /api/v1/operators/{pubkey}/relays
+// Returns all relays operated by the specified pubkey.
+func (s *Server) OperatorRelaysHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	defer func() {
+		metrics.QueryDurationSeconds.WithLabelValues("operator_relays").Observe(time.Since(start).Seconds())
+	}()
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	metrics.QueriesTotal.WithLabelValues("operator_relays").Inc()
+
+	// Extract pubkey from path: /api/v1/operators/{pubkey}/relays
+	path := r.URL.Path
+	prefix := "/api/v1/operators/"
+	suffix := "/relays"
+
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "invalid path format, expected /api/v1/operators/{pubkey}/relays"})
+		return
+	}
+
+	pubkey := path[len(prefix) : len(path)-len(suffix)]
+	if pubkey == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "pubkey required"})
+		return
+	}
+
+	// Validate pubkey format (64 hex chars)
+	if len(pubkey) != 64 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "invalid pubkey: must be 64 hex characters"})
+		return
+	}
+
+	ctx := r.Context()
+	entries, err := s.cache.GetRelaysByOperator(ctx, pubkey)
+	if err != nil {
+		slog.Error("failed to get relays by operator", "pubkey", pubkey, "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "internal server error"})
+		return
+	}
+
+	// Convert pointers to values
+	relays := make([]cache.RelayEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry != nil {
+			relays = append(relays, *entry)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(OperatorRelaysResponse{
+		Pubkey: pubkey,
+		Relays: relays,
+		Total:  len(relays),
+	})
+}

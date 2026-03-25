@@ -79,7 +79,7 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ---
 
-## Phase 2: Enhanced Monitoring (Next)
+## Phase 2: Enhanced Monitoring (Complete)
 
 ### Historical Health Trends
 
@@ -92,19 +92,21 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ### Relay Operator Verification
 
-| Task | Description |
-|------|-------------|
-| Link relays to operator pubkeys | Via NIP-11 `pubkey` field |
-| Verify operator signatures | Optional signed relay claims |
-| Display operator info in UI | Profile, other relays they run |
+| Task | Description | Status |
+|------|-------------|--------|
+| Link relays to operator pubkeys | Via NIP-11 `pubkey` field | ✓ |
+| Operator relays endpoint | `/api/v1/operators/{pubkey}/relays` | ✓ |
+| Verify operator signatures | Optional signed relay claims | Not planned |
+| Display operator info in UI | Profile, other relays they run | Pending (UI) |
 
 ### nostr-watch Federation
 
-| Task | Description |
-|------|-------------|
-| Consume from nostr-watch monitors | Already doing via NIP-66 consumer |
-| Coordinate with nostr-watch | Avoid duplicate monitoring |
-| Cross-reference health data | Multiple monitor consensus |
+| Task | Description | Status |
+|------|-------------|--------|
+| Consume from nostr-watch monitors | Already doing via NIP-66 consumer | ✓ |
+| Extract health data from NIP-66 | Store external monitor latency reports | ✓ |
+| Coordinate with nostr-watch | Avoid duplicate monitoring | Not planned |
+| Cross-reference health data | Multiple monitor consensus | Not planned |
 
 ---
 
@@ -118,4 +120,4 @@ Requires `NOSTR_PRIVATE_KEY` and `PUBLISH_ENABLED=true` (shares key with kind 30
 
 ---
 
-**Last Updated:** 2026-03-23
+**Last Updated:** 2026-03-25

@@ -69,11 +69,11 @@ internal/
 |--------|------|-------------|
 | GET | `/api/v1/relays` | List relays (paginated) |
 | GET | `/api/v1/relay/?url=` | Single relay metadata |
+| GET | `/api/v1/relay/history/?url=` | Relay uptime history (24h/7d/30d) |
 | GET | `/api/v1/relay-prefs/{pubkey}` | User relay preferences |
 | GET | `/api/v1/users/{pubkey}/relays` | User's NIP-65 list |
+| GET | `/api/v1/operators/{pubkey}/relays` | Relays operated by pubkey |
 | GET | `/api/v1/relays/recommend` | Relay recommendations |
-
-**Full API:** See [docs/reference.md](docs/reference.md)
 
 ## Container Registry (CRITICAL)
 
@@ -105,4 +105,4 @@ Single replica recommended - background workers (monitor, crawler, publisher) do
 
 ---
 
-**Last Updated:** 2026-03-11
+**Last Updated:** 2026-03-25

@@ -117,6 +117,16 @@ type RelayEntry struct {
 	Languages        []string          `json:"languages,omitempty"`         // ISO 639-1 codes
 	Topics           map[string]int    `json:"topics,omitempty"`            // topic -> annotation count
 	Atmosphere       map[string]int    `json:"atmosphere,omitempty"`        // atmosphere -> annotation count
+
+	// External monitor reports (from NIP-66 events)
+	ExternalMonitors []ExternalMonitorReport `json:"external_monitors,omitempty"`
+}
+
+// ExternalMonitorReport represents health data from another NIP-66 monitor.
+type ExternalMonitorReport struct {
+	MonitorPubkey string    `json:"monitor_pubkey"`
+	LatencyMs     int       `json:"latency_ms,omitempty"`
+	LastSeen      time.Time `json:"last_seen"`
 }
 
 // SetRelayEntry caches a relay directory entry.
@@ -312,6 +322,40 @@ func (c *Client) GetRelaysByLanguage(ctx context.Context, lang string) ([]string
 func (c *Client) GetRelaysByCommunity(ctx context.Context, community string) ([]string, error) {
 	key := "relays:by:community:" + community
 	return c.rdb.SMembers(ctx, key).Result()
+}
+
+// GetRelaysByOperator returns all relays operated by a specific pubkey.
+// Scans all relay entries and filters by operator pubkey.
+func (c *Client) GetRelaysByOperator(ctx context.Context, pubkey string) ([]*RelayEntry, error) {
+	metrics.CacheOperationsTotal.WithLabelValues("get_relays_by_operator").Inc()
+
+	// Get all relay URLs
+	urls, err := c.GetAllRelayURLs(ctx)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relays_by_operator").Inc()
+		return nil, fmt.Errorf("failed to get relay URLs: %w", err)
+	}
+
+	if len(urls) == 0 {
+		return nil, nil
+	}
+
+	// Batch fetch all relay entries
+	entries, err := c.GetRelayEntriesBatch(ctx, urls)
+	if err != nil {
+		metrics.CacheErrorsTotal.WithLabelValues("get_relays_by_operator").Inc()
+		return nil, fmt.Errorf("failed to fetch relay entries: %w", err)
+	}
+
+	// Filter by operator pubkey
+	var result []*RelayEntry
+	for _, entry := range entries {
+		if entry != nil && entry.Pubkey == pubkey {
+			result = append(result, entry)
+		}
+	}
+
+	return result, nil
 }
 
 // SetPubkeyRelay records that a relay has content from a pubkey.

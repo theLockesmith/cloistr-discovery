@@ -82,7 +82,7 @@ func NewCoordinator(cfg *config.Config, cache *cache.Client, output chan<- strin
 	}
 
 	if cfg.NIP66Enabled {
-		c.nip66Consumer = NewNIP66Consumer(cfg, discoveries)
+		c.nip66Consumer = NewNIP66Consumer(cfg, cache, discoveries)
 	}
 
 	if cfg.PeerDiscoveryEnabled {
