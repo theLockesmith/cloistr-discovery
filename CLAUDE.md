@@ -81,7 +81,7 @@ internal/
 
 | Registry | Purpose |
 |----------|---------|
-| `registry.coldforge.xyz` | CI/CD builds push here |
+| `registry.aegis-hq.xyz` | CI/CD builds push here |
 | `oci.coldforge.xyz` (Harbor) | External images only |
 
 ## Deployment
