@@ -16,14 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/admin"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/api"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/discovery"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/health"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/publisher"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/relay"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/admin"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/api"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/discovery"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/health"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/publisher"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/relay"
 )
 
 func main() {

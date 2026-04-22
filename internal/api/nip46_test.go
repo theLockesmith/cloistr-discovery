@@ -10,8 +10,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 func setupNIP46TestServer(t *testing.T) (*Server, *cache.Client, *miniredis.Miniredis) {

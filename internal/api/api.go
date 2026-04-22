@@ -11,9 +11,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 // Server handles API requests.

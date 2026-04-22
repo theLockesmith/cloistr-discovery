@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 // HostedFetcher fetches relay lists from a hosted URL.

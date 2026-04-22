@@ -15,7 +15,7 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 const (

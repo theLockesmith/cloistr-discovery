@@ -19,9 +19,9 @@ import (
 	"github.com/oschwald/geoip2-golang"
 	"golang.org/x/net/proxy"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/metrics"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
 
 const (

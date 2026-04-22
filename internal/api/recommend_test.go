@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
 )
 
 func TestRecommendRelaysHandler(t *testing.T) {

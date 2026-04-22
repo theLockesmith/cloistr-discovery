@@ -12,8 +12,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/nbd-wtf/go-nostr"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 func TestRelayPrefsHandler_InvalidPubkey(t *testing.T) {

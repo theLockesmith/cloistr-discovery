@@ -11,8 +11,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/cache"
-	"git.coldforge.xyz/coldforge/cloistr-discovery/internal/config"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
+	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
 )
 
 // setupTestServer creates a test API server with miniredis.
