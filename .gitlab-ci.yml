@@ -4,6 +4,8 @@ stages:
 
 variables:
   GO_VERSION: "1.24"
+  GOPRIVATE: "git.aegis-hq.xyz"
+  GOINSECURE: "git.aegis-hq.xyz"
   # Bypass pipeline refs race condition by doing manual checkout
   GIT_STRATEGY: none
 
