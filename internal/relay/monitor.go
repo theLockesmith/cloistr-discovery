@@ -309,6 +309,16 @@ func (m *Monitor) LastCheck() time.Time {
 	return m.lastCheck
 }
 
+// touchLastCheck records progress within an in-flight sweep so the health
+// endpoint sees a live heartbeat instead of only advancing once per full
+// checkAllRelays cycle (which can take well beyond the liveness grace period
+// when the monitored relay count is large).
+func (m *Monitor) touchLastCheck() {
+	m.mu.Lock()
+	m.lastCheck = time.Now()
+	m.mu.Unlock()
+}
+
 // networkStats holds aggregate statistics for the relay network
 type networkStats struct {
 	online   int64
@@ -343,6 +353,7 @@ func newNetworkStats() *networkStats {
 
 func (m *Monitor) checkAllRelays(ctx context.Context) {
 	start := time.Now()
+	m.touchLastCheck()
 	relays := m.GetRelays()
 	slog.Info("checking relays", "count", len(relays))
 
@@ -424,6 +435,7 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 
 			// Record health check and calculate uptime
 			m.recordHealthCheckAndCalculateUptime(ctx, entry)
+			m.touchLastCheck()
 
 			// Collect stats under lock
 			mu.Lock()
@@ -459,6 +471,7 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 
 				// Record health check and calculate uptime
 				m.recordHealthCheckAndCalculateUptime(ctx, entry)
+				m.touchLastCheck()
 
 				// Collect stats under lock
 				mu.Lock()
@@ -487,9 +500,7 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	m.cache.SetStat(ctx, "relays:offline", stats.offline)
 
 	// Update last check time
-	m.mu.Lock()
-	m.lastCheck = time.Now()
-	m.mu.Unlock()
+	m.touchLastCheck()
 
 	slog.Info("relay check complete",
 		"total", len(relays),
