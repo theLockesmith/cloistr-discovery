@@ -1,3 +1,7 @@
+default:
+  tags:
+    - local
+
 stages:
   - test
   - build
@@ -17,6 +21,7 @@ variables:
 
 test:
   stage: test
+  tags: [local]
   image: golang:${GO_VERSION}-alpine
   <<: *go-cache
   variables:
@@ -40,6 +45,7 @@ test:
 
 lint:
   stage: test
+  tags: [local]
   image: golangci/golangci-lint:latest
   <<: *go-cache
   before_script:
@@ -58,6 +64,7 @@ lint:
 
 build:
   stage: build
+  tags: [local]
   image: docker:latest
   services:
     - docker:dind
