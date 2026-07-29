@@ -21,6 +21,11 @@ type Config struct {
 	RelayCheckInterval int      // Seconds between relay health checks
 	NIP11Timeout       int      // Seconds to wait for NIP-11 response
 
+	// PrefsRelayURL is the relay queried for a user's relay preferences
+	// (kind:30078 d=cloistr-relays, then kind:10002). A self-hosted instance
+	// points this at its own relay; it was hardcoded to ours until 2026-07-29.
+	PrefsRelayURL string
+
 	// Inventory settings
 	InventoryTTL int // Hours before inventory expires
 
@@ -76,6 +81,7 @@ func Load() (*Config, error) {
 		SeedRelays:         getEnvSlice("SEED_RELAYS", []string{"wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"}),
 		RelayCheckInterval: getEnvInt("RELAY_CHECK_INTERVAL", 300),
 		NIP11Timeout:       getEnvInt("NIP11_TIMEOUT", 10),
+		PrefsRelayURL:      getEnv("PREFS_RELAY_URL", "wss://relay.cloistr.xyz"),
 
 		// Inventory/Activity settings
 		InventoryTTL: getEnvInt("INVENTORY_TTL", 12),

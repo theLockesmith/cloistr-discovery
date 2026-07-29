@@ -5,6 +5,12 @@ stages:
 include:
   - project: 'coldforge/ci-templates'
     ref: main
+    file: '/templates/cloistr-rules.yml'
+  - project: 'coldforge/ci-templates'
+    ref: main
+    file: '/templates/go-test.yml'
+  - project: 'coldforge/ci-templates'
+    ref: main
     file: '/templates/kaniko-build.yml'
 
 variables:
@@ -18,28 +24,14 @@ variables:
     paths:
       - .go/pkg/mod/
 
-test:
-  stage: test
-  image: golang:${GO_VERSION}-alpine
-  <<: *go-cache
-  variables:
-    GOPATH: ${CI_PROJECT_DIR}/.go
-  before_script:
-    - for i in 1 2 3 4 5; do apk add --no-cache git && break || echo "Attempt $i failed, retrying in 5s..." && sleep 5; done
-  script:
-    - go mod download
-    - go test -v -coverprofile=coverage.out ./...
-    - go tool cover -func=coverage.out
-  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
 
-lint:
-  stage: test
-  image: golangci/golangci-lint:latest
-  <<: *go-cache
-  script:
-    - golangci-lint run --timeout 5m
-  allow_failure: true
 
 build:
   extends: .kaniko-build
   stage: build
+
+test:
+  extends: [.go-test, .cloistr-rules]
+
+lint:
+  extends: [.go-lint, .cloistr-rules]

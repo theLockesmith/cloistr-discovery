@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,6 +146,29 @@ func TestRelayPrefsHandler_CacheHit(t *testing.T) {
 	}
 }
 
+// unreachableRelayURL returns a ws:// URL pointing at a port that was bound and
+// immediately released, so a dial fails at once with ECONNREFUSED.
+//
+// The point is to fail BEFORE go-nostr spawns its connection goroutine. Dialing a
+// real, reachable relay instead makes these tests (a) depend on the public internet,
+// (b) burn the full 10s relayPrefsFetchTimeout each, and (c) trip a data race inside
+// go-nostr: Relay.Close() cancels connectionContext and then reads r.Connection,
+// while the goroutine woken by that same cancellation sets r.Connection = nil without
+// holding closeMutex. That race is upstream and still present in v0.52.3 -- we avoid
+// the code path rather than pretend we fixed it.
+func unreachableRelayURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to reserve a port: %v", err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatalf("failed to release the reserved port: %v", err)
+	}
+	return "ws://" + addr
+}
+
 func TestRelayPrefsHandler_DefaultResponse(t *testing.T) {
 	// Create a test server with a non-existent relay URL to force default response
 	mr := miniredis.RunT(t)
@@ -156,9 +180,10 @@ func TestRelayPrefsHandler_DefaultResponse(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		Port:     8080,
-		LogLevel: "info",
-		CacheURL: "redis://" + mr.Addr(),
+		Port:          8080,
+		LogLevel:      "info",
+		CacheURL:      "redis://" + mr.Addr(),
+		PrefsRelayURL: unreachableRelayURL(t),
 	}
 
 	server := New(cfg, cacheClient)
@@ -236,9 +261,10 @@ func TestRelayPrefsHandler_EmptyRelaysIsArrayNotNull(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		Port:     8080,
-		LogLevel: "info",
-		CacheURL: "redis://" + mr.Addr(),
+		Port:          8080,
+		LogLevel:      "info",
+		CacheURL:      "redis://" + mr.Addr(),
+		PrefsRelayURL: unreachableRelayURL(t),
 	}
 
 	server := New(cfg, cacheClient)

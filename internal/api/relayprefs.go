@@ -19,9 +19,6 @@ const (
 	// relayPrefsFetchTimeout is the maximum time to wait for relay prefs fetch.
 	relayPrefsFetchTimeout = 10 * time.Second
 
-	// cloistrRelayURL is the default relay for querying cloistr-specific events.
-	cloistrRelayURL = "wss://relay.cloistr.xyz"
-
 	// cloistrRelaysDTag is the d-tag for cloistr relay preferences (kind:30078).
 	cloistrRelaysDTag = "cloistr-relays"
 )
@@ -150,8 +147,8 @@ func (s *Server) fetchRelayPrefs(ctx context.Context, pubkey string) ([]RelayPre
 	fetchCtx, cancel := context.WithTimeout(ctx, relayPrefsFetchTimeout)
 	defer cancel()
 
-	// Connect to relay.cloistr.xyz
-	relay, err := nostr.RelayConnect(fetchCtx, cloistrRelayURL)
+	// Connect to the configured prefs relay (PREFS_RELAY_URL).
+	relay, err := nostr.RelayConnect(fetchCtx, s.cfg.PrefsRelayURL)
 	if err != nil {
 		slog.Debug("failed to connect to cloistr relay", "error", err)
 		return nil, "default", err
