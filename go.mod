@@ -3,7 +3,7 @@ module git.aegis-hq.xyz/coldforge/cloistr-discovery
 go 1.25.0
 
 require (
-	github.com/alicebob/miniredis/v2 v2.33.0
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/prometheus/client_golang v1.22.0
