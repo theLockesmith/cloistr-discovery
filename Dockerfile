@@ -21,7 +21,7 @@ FROM builder AS test
 RUN go test -v ./...
 
 # Production stage
-FROM alpine:3.21
+FROM alpine:3.24
 
 WORKDIR /app
 
