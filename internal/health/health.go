@@ -125,6 +125,37 @@ func (r *Registry) Check() (Status, []WorkerStatus) {
 	return overall, statuses
 }
 
+// LivenessHandler returns an HTTP handler for the LIVENESS probe.
+//
+// It answers exactly one question: is this process still running and able to
+// serve HTTP? It deliberately ignores worker staleness.
+//
+// WHY THIS IS SEPARATE FROM Handler()
+//
+// Handler() returns 503 when any registered worker is stale. Pointing a
+// livenessProbe at it means a slow background publisher kills the whole
+// process — including the HTTP API, which is still happily serving cached
+// relay data and has nothing wrong with it.
+//
+// That is what was happening in production: livenessProbe hit /health with
+// failureThreshold 3 / period 30s, a stale worker returned 503, kubelet sent
+// SIGTERM after ~90s, main() shut down gracefully and returned 0, and the pod
+// restarted. 48 restarts over 8 days, every one logged as `Completed exit=0`,
+// which reads like the app chose to exit rather than like a probe kill.
+//
+// The governing rule: a liveness probe should only fail when a RESTART WOULD
+// HELP. Restarting does not make an unreachable upstream relay reachable — the
+// 48 restarts are the proof, since the condition kept recurring. Worker
+// staleness is a monitoring and readiness concern, and /health still reports it
+// in full for exactly that purpose.
+func (r *Registry) LivenessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	}
+}
+
 // Handler returns an HTTP handler for the health endpoint.
 func (r *Registry) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {

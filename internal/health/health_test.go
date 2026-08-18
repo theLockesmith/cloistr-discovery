@@ -249,3 +249,66 @@ func TestHandler_AcceptJSON(t *testing.T) {
 		t.Errorf("expected JSON content type, got %q", rec.Header().Get("Content-Type"))
 	}
 }
+
+// TestLivenessHandler_StaysOKWhenWorkersAreStale is the regression guard for the
+// production restart loop.
+//
+// cloistr-discovery restarted 48 times over 8 days, every one recorded as
+// `Completed exit=0`. The chain: livenessProbe hit /health -> a stale relay
+// publisher made Handler() return 503 -> kubelet SIGTERMed after 3 failures ->
+// main() shut down gracefully and returned 0 -> pod restarted. The exit code
+// made it look like the app chose to quit; it was a probe kill.
+//
+// The invariant: worker staleness must NEVER fail liveness. Restarting the
+// process does not make an unreachable upstream relay reachable, and the 48
+// restarts are the proof — the condition simply recurred. If this test ever
+// fails, the restart loop is back.
+func TestLivenessHandler_StaysOKWhenWorkersAreStale(t *testing.T) {
+	r := NewRegistry()
+
+	// Same shape as TestRegistry_Check_Unhealthy: well past ExpectedInterval +
+	// GracePeriod, i.e. the exact condition that returned 503 in production.
+	r.Register(&Worker{
+		Name:             "stale-worker",
+		Check:            func() time.Time { return time.Now().Add(-15 * time.Minute) },
+		ExpectedInterval: 5 * time.Minute,
+		GracePeriod:      5 * time.Minute,
+	})
+
+	// Precondition: /health MUST still report unhealthy. Liveness is being
+	// separated from that signal, not silencing it — readiness and monitoring
+	// still depend on it.
+	if overall, _ := r.Check(); overall != StatusUnhealthy {
+		t.Fatalf("precondition failed: expected StatusUnhealthy from Check(), got %v", overall)
+	}
+
+	rec := httptest.NewRecorder()
+	r.LivenessHandler()(rec, httptest.NewRequest(http.MethodGet, "/livez", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("liveness returned %d with a stale worker; want %d. "+
+			"A stale background worker must not restart the process.",
+			rec.Code, http.StatusOK)
+	}
+}
+
+// TestHealthHandler_Still503OnStaleWorker pins the other half of the contract:
+// splitting liveness out must NOT weaken /health, which readiness and the
+// dashboards still use to see a stalled publisher.
+func TestHealthHandler_Still503OnStaleWorker(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&Worker{
+		Name:             "stale-worker",
+		Check:            func() time.Time { return time.Now().Add(-15 * time.Minute) },
+		ExpectedInterval: 5 * time.Minute,
+		GracePeriod:      5 * time.Minute,
+	})
+
+	rec := httptest.NewRecorder()
+	r.Handler()(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("/health returned %d for a stale worker; want %d — the staleness "+
+			"signal must survive the liveness split", rec.Code, http.StatusServiceUnavailable)
+	}
+}

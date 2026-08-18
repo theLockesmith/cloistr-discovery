@@ -80,6 +80,11 @@ func main() {
 	// HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthRegistry.Handler())
+	// Liveness is deliberately NOT /health: /health returns 503 on worker
+	// staleness, which restarted this whole process 48 times over 8 days
+	// because a slow relay publisher looked like a dead service. Restarting
+	// never fixed it. /livez answers only "is the process serving HTTP".
+	mux.HandleFunc("/livez", healthRegistry.LivenessHandler())
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
 	mux.HandleFunc("/api/v1/relays/recommend", apiServer.RecommendRelaysHandler)
