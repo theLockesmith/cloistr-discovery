@@ -312,3 +312,36 @@ func TestHealthHandler_Still503OnStaleWorker(t *testing.T) {
 			"signal must survive the liveness split", rec.Code, http.StatusServiceUnavailable)
 	}
 }
+
+// TestReadinessHandler_StaysOKWhenWorkersAreStale guards the OUTAGE half.
+//
+// readinessProbe pointed at /health, which 503s on worker staleness. That
+// marked the pod NotReady, removed it from the Service EndpointSlice, and the
+// public relay API returned 503 with no backend behind it. Observed in
+// production: one discovery pod, ready=False, 53 restarts, and
+// discover.cloistr.xyz/api/v1/relays serving 503 — a slow third-party relay
+// taking the whole API offline.
+//
+// Serving slightly stale relay data beats serving nothing.
+func TestReadinessHandler_StaysOKWhenWorkersAreStale(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&Worker{
+		Name:             "stale-worker",
+		Check:            func() time.Time { return time.Now().Add(-15 * time.Minute) },
+		ExpectedInterval: 5 * time.Minute,
+		GracePeriod:      5 * time.Minute,
+	})
+
+	if overall, _ := r.Check(); overall != StatusUnhealthy {
+		t.Fatalf("precondition: expected StatusUnhealthy, got %v", overall)
+	}
+
+	rec := httptest.NewRecorder()
+	r.ReadinessHandler()(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("readiness returned %d with a stale worker; want %d. A stale "+
+			"background worker must not remove this pod from the Service.",
+			rec.Code, http.StatusOK)
+	}
+}

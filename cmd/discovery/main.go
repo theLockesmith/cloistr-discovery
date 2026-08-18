@@ -85,6 +85,10 @@ func main() {
 	// because a slow relay publisher looked like a dead service. Restarting
 	// never fixed it. /livez answers only "is the process serving HTTP".
 	mux.HandleFunc("/livez", healthRegistry.LivenessHandler())
+	// Readiness is ALSO not /health. /health 503s on worker staleness, which
+	// marked the pod NotReady, removed it from the Service endpoints, and took
+	// the public relay API to 503 with no backend — observed 2026-08-18.
+	mux.HandleFunc("/readyz", healthRegistry.ReadinessHandler())
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
 	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
 	mux.HandleFunc("/api/v1/relays/recommend", apiServer.RecommendRelaysHandler)
