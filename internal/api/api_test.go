@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -42,21 +43,21 @@ func TestMetricsHandler(t *testing.T) {
 	defer mr.Close()
 
 	tests := []struct {
-		name           string
-		method         string
-		wantStatusCode int
+		name            string
+		method          string
+		wantStatusCode  int
 		wantContentType string
 	}{
 		{
-			name:           "GET request returns metrics",
-			method:         http.MethodGet,
-			wantStatusCode: http.StatusOK,
+			name:            "GET request returns metrics",
+			method:          http.MethodGet,
+			wantStatusCode:  http.StatusOK,
 			wantContentType: "text/plain",
 		},
 		{
-			name:           "POST request also works (prometheus handler accepts it)",
-			method:         http.MethodPost,
-			wantStatusCode: http.StatusOK,
+			name:            "POST request also works (prometheus handler accepts it)",
+			method:          http.MethodPost,
+			wantStatusCode:  http.StatusOK,
 			wantContentType: "text/plain",
 		},
 	}
@@ -143,7 +144,7 @@ func TestRelaysHandler(t *testing.T) {
 		wantStatusCode int
 		wantMinRelays  int
 		wantMaxRelays  int
-		checkRelays    func(t *testing.T, relays []cache.RelayEntry)
+		checkRelays    func(t *testing.T, relays []RelayView)
 	}{
 		{
 			name:           "method not allowed",
@@ -166,7 +167,7 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantMinRelays:  2,
 			wantMaxRelays:  2,
-			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+			checkRelays: func(t *testing.T, relays []RelayView) {
 				for _, r := range relays {
 					if r.Health != "online" {
 						t.Errorf("relay %s health = %s, want online", r.URL, r.Health)
@@ -181,7 +182,7 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantMinRelays:  3,
 			wantMaxRelays:  3,
-			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+			checkRelays: func(t *testing.T, relays []RelayView) {
 				for _, r := range relays {
 					hasNIP1 := false
 					for _, nip := range r.SupportedNIPs {
@@ -203,7 +204,7 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantMinRelays:  2,
 			wantMaxRelays:  2,
-			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+			checkRelays: func(t *testing.T, relays []RelayView) {
 				for _, r := range relays {
 					hasNIP1 := false
 					hasNIP11 := false
@@ -228,7 +229,7 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantMinRelays:  2,
 			wantMaxRelays:  2,
-			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+			checkRelays: func(t *testing.T, relays []RelayView) {
 				for _, r := range relays {
 					if r.CountryCode != "US" {
 						t.Errorf("relay %s country = %s, want US", r.URL, r.CountryCode)
@@ -243,7 +244,7 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantMinRelays:  1,
 			wantMaxRelays:  1,
-			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+			checkRelays: func(t *testing.T, relays []RelayView) {
 				for _, r := range relays {
 					if r.Health != "online" {
 						t.Errorf("relay %s health = %s, want online", r.URL, r.Health)
@@ -258,7 +259,7 @@ func TestRelaysHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantMinRelays:  1,
 			wantMaxRelays:  1,
-			checkRelays: func(t *testing.T, relays []cache.RelayEntry) {
+			checkRelays: func(t *testing.T, relays []RelayView) {
 				if len(relays) != 1 {
 					return
 				}
@@ -513,7 +514,7 @@ func TestRelayHandler(t *testing.T) {
 		queryParams    string
 		wantStatusCode int
 		wantError      string
-		checkRelay     func(t *testing.T, relay *cache.RelayEntry)
+		checkRelay     func(t *testing.T, relay *RelayView)
 	}{
 		{
 			name:           "method not allowed",
@@ -528,7 +529,7 @@ func TestRelayHandler(t *testing.T) {
 			path:           "/api/v1/relay/",
 			queryParams:    "?url=wss://test.relay.example.com",
 			wantStatusCode: http.StatusOK,
-			checkRelay: func(t *testing.T, relay *cache.RelayEntry) {
+			checkRelay: func(t *testing.T, relay *RelayView) {
 				if relay.URL != "wss://test.relay.example.com" {
 					t.Errorf("expected URL wss://test.relay.example.com, got %s", relay.URL)
 				}
@@ -552,7 +553,7 @@ func TestRelayHandler(t *testing.T) {
 			path:           "/api/v1/relay/wss://test.relay.example.com",
 			queryParams:    "",
 			wantStatusCode: http.StatusOK,
-			checkRelay: func(t *testing.T, relay *cache.RelayEntry) {
+			checkRelay: func(t *testing.T, relay *RelayView) {
 				if relay.URL != "wss://test.relay.example.com" {
 					t.Errorf("expected URL wss://test.relay.example.com, got %s", relay.URL)
 				}
@@ -768,10 +769,22 @@ func TestRelayHandler_FullMetadata(t *testing.T) {
 	if len(relay.Languages) != len(fullRelay.Languages) {
 		t.Errorf("Languages length mismatch")
 	}
-	if len(relay.Topics) != len(fullRelay.Topics) {
-		t.Errorf("Topics length mismatch")
+	// Topics/Atmosphere are DERIVED on the response now (see relayview.go):
+	// the wire carries a ranked list plus the raw counts, because the UI is
+	// typed for string[] while the count is the consensus signal we refuse to
+	// discard. Assert the contract rather than just lengths — the old
+	// len()-only check passed for topics by coincidence and only failed on
+	// atmosphere because len() of a string is its byte count.
+	if want := []string{"nostr", "bitcoin"}; !reflect.DeepEqual(relay.Topics, want) {
+		t.Errorf("Topics = %v, want %v (ranked by count desc)", relay.Topics, want)
 	}
-	if len(relay.Atmosphere) != len(fullRelay.Atmosphere) {
-		t.Errorf("Atmosphere length mismatch")
+	if len(relay.TopicCounts) != len(fullRelay.Topics) {
+		t.Errorf("TopicCounts = %v, want %d entries", relay.TopicCounts, len(fullRelay.Topics))
+	}
+	if relay.Atmosphere != "technical" {
+		t.Errorf("Atmosphere = %q, want %q (highest count)", relay.Atmosphere, "technical")
+	}
+	if len(relay.AtmosphereCounts) != len(fullRelay.Atmosphere) {
+		t.Errorf("AtmosphereCounts = %v, want %d entries", relay.AtmosphereCounts, len(fullRelay.Atmosphere))
 	}
 }

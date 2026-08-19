@@ -37,7 +37,7 @@ func (s *Server) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 
 // RelaysResponse is the response for relay queries.
 type RelaysResponse struct {
-	Relays []cache.RelayEntry `json:"relays"`
+	Relays []RelayView `json:"relays"`
 	Total  int                `json:"total"`
 	Limit  int                `json:"limit,omitempty"`
 	Offset int                `json:"offset,omitempty"`
@@ -283,7 +283,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := RelaysResponse{
-		Relays: relays,
+		Relays: NewRelayViews(relays),
 		Total:  total,
 		Limit:  limit,
 		Offset: offset,
@@ -347,8 +347,8 @@ func moderationLevelsAtOrAbove(level string) []string {
 
 // SingleRelayResponse is the response for a single relay query.
 type SingleRelayResponse struct {
-	Relay *cache.RelayEntry `json:"relay,omitempty"`
-	Error string            `json:"error,omitempty"`
+	Relay *RelayView `json:"relay,omitempty"`
+	Error string     `json:"error,omitempty"`
 }
 
 // RelayHandler handles GET /api/v1/relay/{url}
@@ -414,7 +414,8 @@ func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(SingleRelayResponse{Relay: entry})
+	view := NewRelayView(*entry)
+	json.NewEncoder(w).Encode(SingleRelayResponse{Relay: &view})
 }
 
 // RelayHistoryResponse contains uptime history for a relay.
