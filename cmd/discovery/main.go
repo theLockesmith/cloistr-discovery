@@ -90,16 +90,16 @@ func main() {
 	// the public relay API to 503 with no backend — observed 2026-08-18.
 	mux.HandleFunc("/readyz", healthRegistry.ReadinessHandler())
 	mux.HandleFunc("/metrics", apiServer.MetricsHandler)
-	mux.HandleFunc("/api/v1/relays", apiServer.RelaysHandler)
-	mux.HandleFunc("/api/v1/relays/recommend", apiServer.RecommendRelaysHandler)
-	mux.HandleFunc("/api/v1/relays/compare", apiServer.CompareRelaysHandler)
-	mux.HandleFunc("/api/v1/relay/reviews", apiServer.RelayReviewsHandler)
-	mux.HandleFunc("/api/v1/relay/nip46-score", apiServer.NIP46ScoreHandler)
-	mux.HandleFunc("/api/v1/relay/history/", apiServer.RelayHistoryHandler)
-	mux.HandleFunc("/api/v1/relay/", apiServer.RelayHandler)
-	mux.HandleFunc("/api/v1/relay-prefs/", apiServer.RelayPrefsHandler)
-	mux.HandleFunc("/api/v1/users/", apiServer.UserRelaysHandler)
-	mux.HandleFunc("/api/v1/operators/", apiServer.OperatorRelaysHandler)
+	mux.HandleFunc("/api/v1/relays", api.WithCORS(apiServer.RelaysHandler))
+	mux.HandleFunc("/api/v1/relays/recommend", api.WithCORS(apiServer.RecommendRelaysHandler))
+	mux.HandleFunc("/api/v1/relays/compare", api.WithCORS(apiServer.CompareRelaysHandler))
+	mux.HandleFunc("/api/v1/relay/reviews", api.WithCORS(apiServer.RelayReviewsHandler))
+	mux.HandleFunc("/api/v1/relay/nip46-score", api.WithCORS(apiServer.NIP46ScoreHandler))
+	mux.HandleFunc("/api/v1/relay/history/", api.WithCORS(apiServer.RelayHistoryHandler))
+	mux.HandleFunc("/api/v1/relay/", api.WithCORS(apiServer.RelayHandler))
+	mux.HandleFunc("/api/v1/relay-prefs/", api.WithCORS(apiServer.RelayPrefsHandler))
+	mux.HandleFunc("/api/v1/users/", api.WithCORS(apiServer.UserRelaysHandler))
+	mux.HandleFunc("/api/v1/operators/", api.WithCORS(apiServer.OperatorRelaysHandler))
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
