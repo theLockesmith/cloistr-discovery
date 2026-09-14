@@ -76,12 +76,12 @@ func TestRecommendRelaysHandler(t *testing.T) {
 	}
 
 	// Insert all relays
-	server.cache.SetRelayEntry(ctx, relayFast, time.Hour)
-	server.cache.SetRelayEntry(ctx, relayMedium, time.Hour)
-	server.cache.SetRelayEntry(ctx, relayDegraded, time.Hour)
-	server.cache.SetRelayEntry(ctx, relayOffline, time.Hour)
-	server.cache.SetRelayEntry(ctx, relayPaid, time.Hour)
-	server.cache.SetRelayEntry(ctx, relayAuth, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relayFast, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relayMedium, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relayDegraded, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relayOffline, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relayPaid, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relayAuth, time.Hour)
 
 	tests := []struct {
 		name           string
@@ -297,7 +297,7 @@ func TestRecommendRelaysHandler(t *testing.T) {
 			server.RecommendRelaysHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("RecommendRelaysHandler() status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
@@ -337,7 +337,7 @@ func TestRecommendRelaysHandler_EmptyCache(t *testing.T) {
 	server.RecommendRelaysHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -367,7 +367,7 @@ func TestRecommendRelaysHandler_ContentType(t *testing.T) {
 	server.RecommendRelaysHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
@@ -391,7 +391,7 @@ func TestRecommendRelaysHandler_InputValidation(t *testing.T) {
 		CountryCode:   "US",
 		LastChecked:   time.Now(),
 	}
-	server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
 
 	tests := []struct {
 		name        string
@@ -447,7 +447,7 @@ func TestRecommendRelaysHandler_InputValidation(t *testing.T) {
 			server.RecommendRelaysHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("expected status 200, got %d", resp.StatusCode)

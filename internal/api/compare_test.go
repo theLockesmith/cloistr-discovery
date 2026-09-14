@@ -52,9 +52,9 @@ func TestCompareRelaysHandler(t *testing.T) {
 		LastChecked:     time.Now(),
 	}
 
-	server.cache.SetRelayEntry(ctx, relay1, time.Hour)
-	server.cache.SetRelayEntry(ctx, relay2, time.Hour)
-	server.cache.SetRelayEntry(ctx, relay3, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay1, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay2, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay3, time.Hour)
 
 	tests := []struct {
 		name           string
@@ -249,7 +249,7 @@ func TestCompareRelaysHandler(t *testing.T) {
 			server.CompareRelaysHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
@@ -289,7 +289,7 @@ func TestCompareRelaysHandler_ContentType(t *testing.T) {
 	server.CompareRelaysHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {

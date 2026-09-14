@@ -12,7 +12,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"RELAY_CHECK_INTERVAL", "NIP11_TIMEOUT", "PUBLISH_ENABLED",
 	}
 	for _, v := range envVars {
-		os.Unsetenv(v)
+		_ = os.Unsetenv(v)
 	}
 
 	cfg, err := Load()
@@ -43,17 +43,17 @@ func TestLoad_Defaults(t *testing.T) {
 
 func TestLoad_FromEnv(t *testing.T) {
 	// Set custom values
-	os.Setenv("DISCOVERY_PORT", "9090")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("CACHE_URL", "redis://custom:6380")
-	os.Setenv("SEED_RELAYS", "wss://relay1.example,wss://relay2.example")
-	os.Setenv("PUBLISH_ENABLED", "true")
+	_ = os.Setenv("DISCOVERY_PORT", "9090")
+	_ = os.Setenv("LOG_LEVEL", "debug")
+	_ = os.Setenv("CACHE_URL", "redis://custom:6380")
+	_ = os.Setenv("SEED_RELAYS", "wss://relay1.example,wss://relay2.example")
+	_ = os.Setenv("PUBLISH_ENABLED", "true")
 	defer func() {
-		os.Unsetenv("DISCOVERY_PORT")
-		os.Unsetenv("LOG_LEVEL")
-		os.Unsetenv("CACHE_URL")
-		os.Unsetenv("SEED_RELAYS")
-		os.Unsetenv("PUBLISH_ENABLED")
+		_ = os.Unsetenv("DISCOVERY_PORT")
+		_ = os.Unsetenv("LOG_LEVEL")
+		_ = os.Unsetenv("CACHE_URL")
+		_ = os.Unsetenv("SEED_RELAYS")
+		_ = os.Unsetenv("PUBLISH_ENABLED")
 	}()
 
 	cfg, err := Load()
@@ -82,8 +82,8 @@ func TestLoad_FromEnv(t *testing.T) {
 }
 
 func TestGetEnvInt_InvalidValue(t *testing.T) {
-	os.Setenv("TEST_INT", "notanumber")
-	defer os.Unsetenv("TEST_INT")
+	_ = os.Setenv("TEST_INT", "notanumber")
+	defer func() { _ = os.Unsetenv("TEST_INT") }()
 
 	result := getEnvInt("TEST_INT", 42)
 	if result != 42 {
@@ -113,8 +113,8 @@ func TestGetEnvBool_Variants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
-			os.Setenv("TEST_BOOL", tt.value)
-			defer os.Unsetenv("TEST_BOOL")
+			_ = os.Setenv("TEST_BOOL", tt.value)
+			defer func() { _ = os.Unsetenv("TEST_BOOL") }()
 
 			result := getEnvBool("TEST_BOOL", !tt.expected)
 			if result != tt.expected {
@@ -125,8 +125,8 @@ func TestGetEnvBool_Variants(t *testing.T) {
 }
 
 func TestGetEnvBool_InvalidValue(t *testing.T) {
-	os.Setenv("TEST_BOOL", "maybe")
-	defer os.Unsetenv("TEST_BOOL")
+	_ = os.Setenv("TEST_BOOL", "maybe")
+	defer func() { _ = os.Unsetenv("TEST_BOOL") }()
 
 	result := getEnvBool("TEST_BOOL", true)
 	if result != true {
@@ -135,7 +135,7 @@ func TestGetEnvBool_InvalidValue(t *testing.T) {
 }
 
 func TestGetEnvSlice_Empty(t *testing.T) {
-	os.Unsetenv("TEST_SLICE")
+	_ = os.Unsetenv("TEST_SLICE")
 
 	result := getEnvSlice("TEST_SLICE", []string{"default1", "default2"})
 	if len(result) != 2 {
@@ -147,8 +147,8 @@ func TestGetEnvSlice_Empty(t *testing.T) {
 }
 
 func TestGetEnvSlice_SingleValue(t *testing.T) {
-	os.Setenv("TEST_SLICE", "single")
-	defer os.Unsetenv("TEST_SLICE")
+	_ = os.Setenv("TEST_SLICE", "single")
+	defer func() { _ = os.Unsetenv("TEST_SLICE") }()
 
 	result := getEnvSlice("TEST_SLICE", []string{})
 	if len(result) != 1 {

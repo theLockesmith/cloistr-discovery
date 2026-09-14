@@ -939,10 +939,14 @@ func (c *Client) GetUptimePercent(ctx context.Context, relayURL string, window t
 
 	// Get all checks within the time window
 	cutoff := float64(time.Now().Add(-window).Unix())
-	checks, err := c.rdb.ZRangeByScore(ctx, key, &redis.ZRangeBy{
-		Min: fmt.Sprintf("%f", cutoff),
-		Max: "+inf",
+	checks, err := c.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:     key,
+		Start:   fmt.Sprintf("%f", cutoff),
+		Stop:    "+inf",
+		ByScore: true,
 	}).Result()
+
+
 
 	if err != nil {
 		metrics.CacheErrorsTotal.WithLabelValues("get_uptime_percent").Inc()

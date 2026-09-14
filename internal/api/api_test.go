@@ -70,7 +70,7 @@ func TestMetricsHandler(t *testing.T) {
 			server.MetricsHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("MetricsHandler() status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
@@ -132,10 +132,10 @@ func TestRelaysHandler(t *testing.T) {
 		LastChecked:   time.Now(),
 	}
 
-	server.cache.SetRelayEntry(ctx, relay1, time.Hour)
-	server.cache.SetRelayEntry(ctx, relay2, time.Hour)
-	server.cache.SetRelayEntry(ctx, relay3, time.Hour)
-	server.cache.SetRelayEntry(ctx, relay4, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay1, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay2, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay3, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay4, time.Hour)
 
 	tests := []struct {
 		name           string
@@ -302,7 +302,7 @@ func TestRelaysHandler(t *testing.T) {
 			server.RelaysHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("RelaysHandler() status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
@@ -440,7 +440,7 @@ func TestRelaysHandler_ContentType(t *testing.T) {
 	server.RelaysHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
@@ -456,7 +456,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache client: %v", err)
 	}
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	cfg := &config.Config{
 		Port:     8080,
@@ -505,7 +505,7 @@ func TestRelayHandler(t *testing.T) {
 		Community:        "test-community",
 		Languages:        []string{"en", "es"},
 	}
-	server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
 
 	tests := []struct {
 		name           string
@@ -609,7 +609,7 @@ func TestRelayHandler(t *testing.T) {
 			server.RelayHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("RelayHandler() status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
@@ -651,7 +651,7 @@ func TestRelayHandler_ContentType(t *testing.T) {
 		Name:   "Test Relay",
 		Health: "online",
 	}
-	server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, testRelay, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/?url=wss://test.relay.example.com", nil)
 	w := httptest.NewRecorder()
@@ -659,7 +659,7 @@ func TestRelayHandler_ContentType(t *testing.T) {
 	server.RelayHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
@@ -696,7 +696,7 @@ func TestRelayHandler_FullMetadata(t *testing.T) {
 		Topics:           map[string]int{"bitcoin": 5, "nostr": 10},
 		Atmosphere:       map[string]int{"technical": 3, "friendly": 2},
 	}
-	server.cache.SetRelayEntry(ctx, fullRelay, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, fullRelay, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/?url=wss://full.relay.example.com", nil)
 	w := httptest.NewRecorder()
@@ -704,7 +704,7 @@ func TestRelayHandler_FullMetadata(t *testing.T) {
 	server.RelayHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)

@@ -40,7 +40,7 @@ func TestRelayReviewsHandler(t *testing.T) {
 		TotalReviews:  2,
 		FetchedAt:     time.Now(),
 	}
-	server.cache.SetRelayReviews(ctx, reviews)
+	_ = server.cache.SetRelayReviews(ctx, reviews)
 
 	tests := []struct {
 		name           string
@@ -114,7 +114,7 @@ func TestRelayReviewsHandler(t *testing.T) {
 			server.RelayReviewsHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("status = %v, want %v", resp.StatusCode, tt.wantStatusCode)
@@ -127,7 +127,7 @@ func TestRelayReviewsHandler(t *testing.T) {
 
 			if tt.wantError != "" {
 				var errResp map[string]string
-				json.NewDecoder(resp.Body).Decode(&errResp)
+				_ = json.NewDecoder(resp.Body).Decode(&errResp)
 				if errResp["error"] != tt.wantError {
 					t.Errorf("error = %q, want %q", errResp["error"], tt.wantError)
 				}
@@ -160,7 +160,7 @@ func TestRelayReviewsWithWoT(t *testing.T) {
 		Follows:   []string{followPubkey},
 		FetchedAt: time.Now(),
 	}
-	server.cache.SetUserContacts(ctx, contacts)
+	_ = server.cache.SetUserContacts(ctx, contacts)
 
 	// Setup reviews - one from follow, one from stranger
 	reviews := &cache.RelayReviewsEntry{
@@ -183,7 +183,7 @@ func TestRelayReviewsWithWoT(t *testing.T) {
 		TotalReviews:  2,
 		FetchedAt:     time.Now(),
 	}
-	server.cache.SetRelayReviews(ctx, reviews)
+	_ = server.cache.SetRelayReviews(ctx, reviews)
 
 	// Request with pubkey for WoT weighting
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/reviews?url=wss://wot-test.relay.com&pubkey="+userPubkey, nil)
@@ -192,7 +192,7 @@ func TestRelayReviewsWithWoT(t *testing.T) {
 	server.RelayReviewsHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %v, want 200", resp.StatusCode)

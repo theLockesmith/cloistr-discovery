@@ -276,7 +276,7 @@ func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // RelaysHandler handles listing and adding relays.
@@ -287,7 +287,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		relays := s.monitor.GetRelays()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"relays": relays,
 			"total":  len(relays),
 		})
@@ -307,7 +307,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Submit to discovery coordinator for proper processing
 		if s.coordinator != nil {
-			s.coordinator.SubmitRelay(ctx, req.URL)
+			_ = s.coordinator.SubmitRelay(ctx, req.URL)
 		} else {
 			// Fallback: add directly to monitor
 			s.monitor.AddRelay(req.URL)
@@ -315,7 +315,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 
 		slog.Info("admin added relay", "url", req.URL)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -336,7 +336,7 @@ func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 		s.monitor.RemoveRelay(url)
 		slog.Info("admin removed relay", "url", url)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -355,7 +355,7 @@ func (s *Server) WhitelistHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"whitelist": whitelist,
 			"total":     len(whitelist),
 		})
@@ -383,7 +383,7 @@ func (s *Server) WhitelistHandler(w http.ResponseWriter, r *http.Request) {
 
 		slog.Info("admin added to whitelist", "url", req.URL)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -408,7 +408,7 @@ func (s *Server) WhitelistItemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Info("admin removed from whitelist", "url", url)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -427,7 +427,7 @@ func (s *Server) BlacklistHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"blacklist": blacklist,
 			"total":     len(blacklist),
 		})
@@ -455,7 +455,7 @@ func (s *Server) BlacklistHandler(w http.ResponseWriter, r *http.Request) {
 
 		slog.Info("admin added to blacklist", "url", req.URL)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "added", "url": req.URL})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -480,7 +480,7 @@ func (s *Server) BlacklistItemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Info("admin removed from blacklist", "url", url)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed", "url": url})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -499,7 +499,7 @@ func (s *Server) PeersHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"peers": peers,
 			"total": len(peers),
 		})
@@ -524,7 +524,7 @@ func (s *Server) PeersHandler(w http.ResponseWriter, r *http.Request) {
 
 		slog.Info("admin added trusted peer", "pubkey", req.Pubkey[:16]+"...")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "added", "pubkey": req.Pubkey})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "added", "pubkey": req.Pubkey})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -544,7 +544,7 @@ func (s *Server) PeerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Info("admin removed trusted peer", "pubkey", pubkey[:16]+"...")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "removed", "pubkey": pubkey})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed", "pubkey": pubkey})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

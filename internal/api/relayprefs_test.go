@@ -51,7 +51,7 @@ func TestRelayPrefsHandler_InvalidPubkey(t *testing.T) {
 			server.RelayPrefsHandler(w, req)
 
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Errorf("expected status 400, got %d", resp.StatusCode)
@@ -81,7 +81,7 @@ func TestRelayPrefsHandler_MethodNotAllowed(t *testing.T) {
 	server.RelayPrefsHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("expected status 405, got %d", resp.StatusCode)
@@ -115,7 +115,7 @@ func TestRelayPrefsHandler_CacheHit(t *testing.T) {
 	server.RelayPrefsHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
@@ -197,7 +197,7 @@ func TestRelayPrefsHandler_DefaultResponse(t *testing.T) {
 	server.RelayPrefsHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
@@ -233,7 +233,7 @@ func TestRelayPrefsHandler_ContentType(t *testing.T) {
 		CachedAt: time.Now(),
 		Relays:   nil,
 	}
-	server.cache.SetRelayPrefs(ctx, cachedEntry)
+	_ = server.cache.SetRelayPrefs(ctx, cachedEntry)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay-prefs/"+pubkey, nil)
 	w := httptest.NewRecorder()
@@ -241,7 +241,7 @@ func TestRelayPrefsHandler_ContentType(t *testing.T) {
 	server.RelayPrefsHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "application/json" {
@@ -277,7 +277,7 @@ func TestRelayPrefsHandler_EmptyRelaysIsArrayNotNull(t *testing.T) {
 	server.RelayPrefsHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)

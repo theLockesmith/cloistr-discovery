@@ -290,7 +290,7 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 
@@ -384,7 +384,7 @@ func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 	if relayURL == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "relay URL required"})
+		_ = json.NewEncoder(w).Encode(SingleRelayResponse{Error: "relay URL required"})
 		return
 	}
 
@@ -392,7 +392,7 @@ func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(relayURL, "wss://") && !strings.HasPrefix(relayURL, "ws://") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "invalid relay URL: must start with wss:// or ws://"})
+		_ = json.NewEncoder(w).Encode(SingleRelayResponse{Error: "invalid relay URL: must start with wss:// or ws://"})
 		return
 	}
 
@@ -402,20 +402,20 @@ func (s *Server) RelayHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to get relay entry", "url", relayURL, "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "internal server error"})
+		_ = json.NewEncoder(w).Encode(SingleRelayResponse{Error: "internal server error"})
 		return
 	}
 
 	if entry == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(SingleRelayResponse{Error: "relay not found"})
+		_ = json.NewEncoder(w).Encode(SingleRelayResponse{Error: "relay not found"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	view := NewRelayView(*entry)
-	json.NewEncoder(w).Encode(SingleRelayResponse{Relay: &view})
+	_ = json.NewEncoder(w).Encode(SingleRelayResponse{Relay: &view})
 }
 
 // RelayHistoryResponse contains uptime history for a relay.
@@ -462,7 +462,7 @@ func (s *Server) RelayHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if relayURL == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "relay URL required"})
+		_ = json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "relay URL required"})
 		return
 	}
 
@@ -470,7 +470,7 @@ func (s *Server) RelayHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(relayURL, "wss://") && !strings.HasPrefix(relayURL, "ws://") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "invalid relay URL: must start with wss:// or ws://"})
+		_ = json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "invalid relay URL: must start with wss:// or ws://"})
 		return
 	}
 
@@ -482,7 +482,7 @@ func (s *Server) RelayHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to get uptime stats", "url", relayURL, "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "internal server error"})
+		_ = json.NewEncoder(w).Encode(RelayHistoryResponse{Error: "internal server error"})
 		return
 	}
 
@@ -504,7 +504,7 @@ func (s *Server) RelayHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // OperatorRelaysResponse contains relays operated by a pubkey.
@@ -538,7 +538,7 @@ func (s *Server) OperatorRelaysHandler(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "invalid path format, expected /api/v1/operators/{pubkey}/relays"})
+		_ = json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "invalid path format, expected /api/v1/operators/{pubkey}/relays"})
 		return
 	}
 
@@ -546,7 +546,7 @@ func (s *Server) OperatorRelaysHandler(w http.ResponseWriter, r *http.Request) {
 	if pubkey == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "pubkey required"})
+		_ = json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "pubkey required"})
 		return
 	}
 
@@ -554,7 +554,7 @@ func (s *Server) OperatorRelaysHandler(w http.ResponseWriter, r *http.Request) {
 	if len(pubkey) != 64 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "invalid pubkey: must be 64 hex characters"})
+		_ = json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "invalid pubkey: must be 64 hex characters"})
 		return
 	}
 
@@ -564,7 +564,7 @@ func (s *Server) OperatorRelaysHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to get relays by operator", "pubkey", pubkey, "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "internal server error"})
+		_ = json.NewEncoder(w).Encode(OperatorRelaysResponse{Error: "internal server error"})
 		return
 	}
 
@@ -577,7 +577,7 @@ func (s *Server) OperatorRelaysHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(OperatorRelaysResponse{
+	_ = json.NewEncoder(w).Encode(OperatorRelaysResponse{
 		Pubkey: pubkey,
 		Relays: relays,
 		Total:  len(relays),

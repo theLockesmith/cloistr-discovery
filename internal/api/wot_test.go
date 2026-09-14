@@ -196,8 +196,8 @@ func TestRecommendWithWoT(t *testing.T) {
 		LastChecked:   time.Now(),
 	}
 
-	server.cache.SetRelayEntry(ctx, relay1, time.Hour)
-	server.cache.SetRelayEntry(ctx, relay2, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay1, time.Hour)
+	_ = server.cache.SetRelayEntry(ctx, relay2, time.Hour)
 
 	// Setup WoT scores - popular relay is used by 5 follows
 	wotEntry := &cache.WoTRelayScoresEntry{
@@ -208,7 +208,7 @@ func TestRecommendWithWoT(t *testing.T) {
 		FollowsCount: 10,
 		ComputedAt:   time.Now(),
 	}
-	server.cache.SetWoTRelayScores(ctx, wotEntry)
+	_ = server.cache.SetWoTRelayScores(ctx, wotEntry)
 
 	// Get WoT scores
 	scores, err := server.GetWoTRelayScores(ctx, userPubkey)

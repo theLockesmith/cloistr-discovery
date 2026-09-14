@@ -45,14 +45,14 @@ func TestNIP46ScoreHandler_NoURL(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
 	}
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	if result.Error == "" {
 		t.Error("expected error message for missing URL")
@@ -69,14 +69,14 @@ func TestNIP46ScoreHandler_InvalidURL(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
 	}
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	if result.Error == "" {
 		t.Error("expected error for invalid URL scheme")
@@ -93,14 +93,14 @@ func TestNIP46ScoreHandler_RelayNotFound(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, resp.StatusCode)
 	}
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	if result.Score != 0 {
 		t.Errorf("expected score 0 for unknown relay, got %d", result.Score)
@@ -125,7 +125,7 @@ func TestNIP46ScoreHandler_NoNIP46Support(t *testing.T) {
 		LatencyMs:     100,
 		LastChecked:   time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://relay.damus.io", nil)
 	w := httptest.NewRecorder()
@@ -133,14 +133,14 @@ func TestNIP46ScoreHandler_NoNIP46Support(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
 	}
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	if result.Score != 0 {
 		t.Errorf("expected score 0 for relay without NIP-46, got %d", result.Score)
@@ -168,7 +168,7 @@ func TestNIP46ScoreHandler_WithNIP46Support(t *testing.T) {
 		LatencyMs:     50,
 		LastChecked:   time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://relay.cloistr.xyz", nil)
 	w := httptest.NewRecorder()
@@ -176,14 +176,14 @@ func TestNIP46ScoreHandler_WithNIP46Support(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
 	}
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	if result.Score < 80 {
 		t.Errorf("expected high score for NIP-46 capable relay, got %d", result.Score)
@@ -207,7 +207,7 @@ func TestNIP46ScoreHandler_OfflineRelay(t *testing.T) {
 		LatencyMs:     0,
 		LastChecked:   time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://offline.relay.com", nil)
 	w := httptest.NewRecorder()
@@ -215,10 +215,10 @@ func TestNIP46ScoreHandler_OfflineRelay(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	if result.Score != 0 {
 		t.Errorf("expected score 0 for offline relay, got %d", result.Score)
@@ -242,7 +242,7 @@ func TestNIP46ScoreHandler_DegradedRelay(t *testing.T) {
 		LatencyMs:     100,
 		LastChecked:   time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://degraded.relay.com", nil)
 	w := httptest.NewRecorder()
@@ -250,10 +250,10 @@ func TestNIP46ScoreHandler_DegradedRelay(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	// Should have 100 - 20 (degraded) = 80
 	if result.Score != 80 {
@@ -278,7 +278,7 @@ func TestNIP46ScoreHandler_HighLatencyRelay(t *testing.T) {
 		LatencyMs:     1500, // Very high latency
 		LastChecked:   time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://slow.relay.com", nil)
 	w := httptest.NewRecorder()
@@ -286,10 +286,10 @@ func TestNIP46ScoreHandler_HighLatencyRelay(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	// Should have 100 - 30 (latency > 1000ms) = 70
 	if result.Score != 70 {
@@ -315,7 +315,7 @@ func TestNIP46ScoreHandler_PaymentRequired(t *testing.T) {
 		PaymentRequired: true,
 		LastChecked:     time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://paid.relay.com", nil)
 	w := httptest.NewRecorder()
@@ -323,10 +323,10 @@ func TestNIP46ScoreHandler_PaymentRequired(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	// Should have 100 - 15 (payment) = 85
 	if result.Score != 85 {
@@ -349,7 +349,7 @@ func TestNIP46ScoreHandler_AuthRequired(t *testing.T) {
 		AuthRequired:  true,
 		LastChecked:   time.Now(),
 	}
-	cacheClient.SetRelayEntry(ctx, entry, time.Hour)
+	_ = cacheClient.SetRelayEntry(ctx, entry, time.Hour)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/nip46-score?url=wss://auth.relay.com", nil)
 	w := httptest.NewRecorder()
@@ -357,10 +357,10 @@ func TestNIP46ScoreHandler_AuthRequired(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result NIP46ScoreResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	// Should have 100 - 5 (auth) = 95
 	if result.Score != 95 {
@@ -378,7 +378,7 @@ func TestNIP46ScoreHandler_MethodNotAllowed(t *testing.T) {
 	server.NIP46ScoreHandler(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("expected status %d for POST, got %d", http.StatusMethodNotAllowed, resp.StatusCode)

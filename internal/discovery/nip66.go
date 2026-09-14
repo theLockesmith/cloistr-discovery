@@ -87,7 +87,7 @@ func (n *NIP66Consumer) consumeFromRelay(ctx context.Context, relayURL string) b
 		slog.Debug("failed to connect for NIP-66", "url", relayURL, "error", err)
 		return false
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Subscribe to kind 30166 (relay monitor) events
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{

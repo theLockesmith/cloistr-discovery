@@ -153,7 +153,7 @@ func createTorClient(proxyURL string, timeout time.Duration) (*http.Client, erro
 	}
 
 	transport := &http.Transport{
-		Dial: dialer.Dial,
+		Dial: dialer.Dial, //nolint:staticcheck // proxy.Dialer only exposes Dial; DialContext requires a type assertion to proxy.ContextDialer
 	}
 
 	return &http.Client{
@@ -494,10 +494,10 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 	metrics.HealthCheckCycleDurationSeconds.Observe(time.Since(start).Seconds())
 
 	// Update stats in cache
-	m.cache.SetStat(ctx, "relays:total", int64(len(relays)))
-	m.cache.SetStat(ctx, "relays:online", stats.online)
-	m.cache.SetStat(ctx, "relays:degraded", stats.degraded)
-	m.cache.SetStat(ctx, "relays:offline", stats.offline)
+	_ = m.cache.SetStat(ctx, "relays:total", int64(len(relays)))
+	_ = m.cache.SetStat(ctx, "relays:online", stats.online)
+	_ = m.cache.SetStat(ctx, "relays:degraded", stats.degraded)
+	_ = m.cache.SetStat(ctx, "relays:offline", stats.offline)
 
 	// Update last check time
 	m.touchLastCheck()
@@ -705,7 +705,7 @@ func (m *Monitor) checkRelayWithClient(ctx context.Context, relayURL string, cli
 		}
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	latency := time.Since(start)
 

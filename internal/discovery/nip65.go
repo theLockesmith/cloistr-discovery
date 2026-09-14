@@ -116,7 +116,7 @@ func (n *NIP65Crawler) crawlRelay(ctx context.Context, relayURL string) {
 		slog.Debug("failed to connect for NIP-65 crawl", "url", relayURL, "error", err)
 		return
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Subscribe to recent kind 10002 events
 	sub, err := relay.Subscribe(crawlCtx, []nostr.Filter{

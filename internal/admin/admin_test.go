@@ -79,7 +79,7 @@ func setupTestServer(t *testing.T) (*Server, *cache.Client, *miniredis.Miniredis
 func TestNewServer(t *testing.T) {
 	server, cacheClient, mr, monitor, coordinator := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	if server == nil {
 		t.Fatal("NewServer() returned nil")
@@ -105,7 +105,7 @@ func TestNewServer(t *testing.T) {
 func TestSetPublisher(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	pub := &mockPublisher{
 		publicKey:       "testpubkey123",
@@ -124,11 +124,11 @@ func TestSetPublisher(t *testing.T) {
 func TestAuthMiddleware(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	handler := server.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	tests := []struct {
@@ -215,17 +215,17 @@ func TestAuthMiddleware(t *testing.T) {
 func TestDashboardHandler(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := httptest.NewRequest(http.MethodGet, "/", nil).Context()
 
 	// Set some stats
-	cacheClient.SetStat(ctx, "relays:total", 100)
-	cacheClient.SetStat(ctx, "relays:online", 80)
-	cacheClient.SetStat(ctx, "relays:degraded", 10)
-	cacheClient.SetStat(ctx, "relays:offline", 10)
-	cacheClient.SetStat(ctx, "discovery:nip65", 50)
-	cacheClient.SetStat(ctx, "discovery:nip66", 30)
+	_ = cacheClient.SetStat(ctx, "relays:total", 100)
+	_ = cacheClient.SetStat(ctx, "relays:online", 80)
+	_ = cacheClient.SetStat(ctx, "relays:degraded", 10)
+	_ = cacheClient.SetStat(ctx, "relays:offline", 10)
+	_ = cacheClient.SetStat(ctx, "discovery:nip65", 50)
+	_ = cacheClient.SetStat(ctx, "discovery:nip66", 30)
 
 	tests := []struct {
 		name           string
@@ -285,7 +285,7 @@ func TestDashboardHandler(t *testing.T) {
 func TestDashboardHandler_WithPublisher(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	pub := &mockPublisher{
 		publicKey:       "testpubkey123",
@@ -329,7 +329,7 @@ func TestDashboardHandler_WithPublisher(t *testing.T) {
 func TestRelaysHandler(t *testing.T) {
 	server, cacheClient, mr, monitor, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("GET returns relay list", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/admin/relays", nil)
@@ -419,7 +419,7 @@ func TestRelaysHandler(t *testing.T) {
 func TestWhitelistHandler(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("GET returns empty whitelist", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/admin/whitelist", nil)
@@ -499,7 +499,7 @@ func TestWhitelistHandler(t *testing.T) {
 func TestBlacklistHandler(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("GET returns empty blacklist", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/admin/blacklist", nil)
@@ -566,7 +566,7 @@ func TestBlacklistHandler(t *testing.T) {
 func TestPeersHandler(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("GET returns empty peers", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/admin/peers", nil)
@@ -633,7 +633,7 @@ func TestPeersHandler(t *testing.T) {
 func TestHandler_Routing(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	tests := []struct {
 		name           string
@@ -699,7 +699,7 @@ func TestHandler_Routing(t *testing.T) {
 func TestRelayHandler_Delete(t *testing.T) {
 	server, cacheClient, mr, monitor, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	// Ensure relay exists
 	monitor.AddRelay("wss://to-delete.example.com")
@@ -726,12 +726,12 @@ func TestRelayHandler_Delete(t *testing.T) {
 func TestWhitelistItemHandler_Delete(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := httptest.NewRequest(http.MethodGet, "/", nil).Context()
 
 	// Add item to whitelist first
-	cacheClient.AddToWhitelist(ctx, "wss://to-remove.example.com")
+	_ = cacheClient.AddToWhitelist(ctx, "wss://to-remove.example.com")
 
 	req := httptest.NewRequest(http.MethodDelete, "/admin/whitelist/to-remove.example.com", nil)
 	rec := httptest.NewRecorder()
@@ -755,12 +755,12 @@ func TestWhitelistItemHandler_Delete(t *testing.T) {
 func TestBlacklistItemHandler_Delete(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := httptest.NewRequest(http.MethodGet, "/", nil).Context()
 
 	// Add item to blacklist first
-	cacheClient.AddToBlacklist(ctx, "wss://to-remove.example.com")
+	_ = cacheClient.AddToBlacklist(ctx, "wss://to-remove.example.com")
 
 	req := httptest.NewRequest(http.MethodDelete, "/admin/blacklist/to-remove.example.com", nil)
 	rec := httptest.NewRecorder()
@@ -784,14 +784,14 @@ func TestBlacklistItemHandler_Delete(t *testing.T) {
 func TestPeerHandler_Delete(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := httptest.NewRequest(http.MethodGet, "/", nil).Context()
 
 	pubkey := "abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
 
 	// Add peer first
-	cacheClient.AddTrustedPeer(ctx, pubkey)
+	_ = cacheClient.AddTrustedPeer(ctx, pubkey)
 
 	req := httptest.NewRequest(http.MethodDelete, "/admin/peers/"+pubkey, nil)
 	rec := httptest.NewRecorder()
@@ -815,7 +815,7 @@ func TestPeerHandler_Delete(t *testing.T) {
 func TestHandlers_ContentType(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	handlers := []struct {
 		name    string
@@ -846,7 +846,7 @@ func TestHandlers_ContentType(t *testing.T) {
 func TestRelaysHandler_POSTWithCoordinator(t *testing.T) {
 	server, cacheClient, mr, _, _ := setupTestServer(t)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	body := bytes.NewReader([]byte(`{"url": "wss://via-coordinator.example.com"}`))
 	req := httptest.NewRequest(http.MethodPost, "/admin/relays", body)

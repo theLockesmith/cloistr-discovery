@@ -217,7 +217,7 @@ func fetchNIP65FromRelay(ctx context.Context, relayURL, pubkey string) (*nostr.E
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Subscribe to kind 10002 events from this pubkey
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
@@ -267,9 +267,10 @@ func parseNIP65Tags(tags nostr.Tags) []UserRelayEntry {
 
 			if len(tag) >= 3 {
 				marker := tag[2]
-				if marker == "read" {
+				switch marker {
+				case "read":
 					entry.Write = false
-				} else if marker == "write" {
+				case "write":
 					entry.Read = false
 				}
 			}

@@ -189,7 +189,7 @@ func (p *NIP66Publisher) createAnnouncementEvent() *nostr.Event {
 		Content:   "",
 	}
 
-	event.Sign(p.sk)
+	_ = event.Sign(p.sk)
 	return event
 }
 
@@ -226,12 +226,7 @@ func (p *NIP66Publisher) createRelayStatusEvent(entry *cache.RelayEntry) *nostr.
 		tags = append(tags, nostr.Tag{"R", "!payment"})
 	}
 
-	// Geohash if we have country code (placeholder - need actual geohash)
-	if entry.CountryCode != "" {
-		// Note: This is a country code, not a geohash. Full geohash support
-		// requires lat/lon which we'll add in Phase 2 with GeoIP integration.
-		// For now, we skip the g tag rather than publish incorrect data.
-	}
+	// TODO(phase2): publish geohash g-tag when GeoIP integration lands (needs lat/lon from GeoIP)
 
 	// Content: NIP-11 info document as JSON
 	content := ""
@@ -268,7 +263,7 @@ func (p *NIP66Publisher) createRelayStatusEvent(entry *cache.RelayEntry) *nostr.
 		Content:   content,
 	}
 
-	event.Sign(p.sk)
+	_ = event.Sign(p.sk)
 	return event
 }
 
@@ -294,7 +289,7 @@ func (p *NIP66Publisher) publishEvent(ctx context.Context, relayURL string, even
 		metrics.NIP66PublishErrorsTotal.WithLabelValues(kind, relayURL, "connection").Inc()
 		return err
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	if err := relay.Publish(ctx, *event); err != nil {
 		// Check if auth is required
@@ -328,7 +323,7 @@ func (p *NIP66Publisher) publishBatch(ctx context.Context, relayURL string, even
 		metrics.NIP66PublishErrorsTotal.WithLabelValues("30166", relayURL, "connection").Inc()
 		return 0
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	var published int64
 	authAttempted := false

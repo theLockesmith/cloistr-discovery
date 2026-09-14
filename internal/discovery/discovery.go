@@ -175,8 +175,8 @@ func (c *Coordinator) handleDiscoveredRelay(ctx context.Context, discovered Disc
 	}
 
 	// Update stats
-	c.cache.IncrementStat(ctx, "discovery:"+discovered.Source)
-	c.cache.IncrementStat(ctx, "discovery:total")
+	_ = c.cache.IncrementStat(ctx, "discovery:"+discovered.Source)
+	_ = c.cache.IncrementStat(ctx, "discovery:total")
 
 	slog.Debug("discovered new relay",
 		"url", url,

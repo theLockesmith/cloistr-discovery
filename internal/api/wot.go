@@ -217,7 +217,7 @@ func fetchContactsFromRelay(ctx context.Context, relayURL, pubkey string) (*nost
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{

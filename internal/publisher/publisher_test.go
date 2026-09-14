@@ -45,7 +45,7 @@ func TestNew(t *testing.T) {
 	defer mr.Close()
 
 	cacheClient, _ := cache.New("redis://" + mr.Addr())
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	tests := []struct {
 		name       string
@@ -150,11 +150,11 @@ func TestNew(t *testing.T) {
 
 func TestParsePrivateKey(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantErr   bool
-		wantLen   int
-		checkHex  bool
+		name     string
+		input    string
+		wantErr  bool
+		wantLen  int
+		checkHex bool
 	}{
 		{
 			name:     "valid hex key (64 chars)",
@@ -244,7 +244,7 @@ func TestParsePrivateKey(t *testing.T) {
 			if tt.checkHex {
 				// Verify it's valid hex
 				for _, r := range result {
-					if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+					if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
 						t.Errorf("parsePrivateKey() result contains non-hex character: %c", r)
 						break
 					}
@@ -263,7 +263,7 @@ func TestCreateEvent(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	tests := []struct {
 		name       string
@@ -279,35 +279,35 @@ func TestCreateEvent(t *testing.T) {
 				LastChecked: time.Now(),
 			},
 			checkTags: map[string][]string{
-				"d":            {"wss://minimal.example.com"},
-				"relay":        {"wss://minimal.example.com"},
-				"health":       {"online"},
-				"payment":      {"free"},
-				"admission":    {"open"},
+				"d":         {"wss://minimal.example.com"},
+				"relay":     {"wss://minimal.example.com"},
+				"health":    {"online"},
+				"payment":   {"free"},
+				"admission": {"open"},
 			},
 			checkCount: 7, // d, relay, health, last_checked, payment, admission, expires
 		},
 		{
 			name: "full relay entry",
 			entry: &cache.RelayEntry{
-				URL:             "wss://full.example.com",
-				Name:            "Full Relay",
-				Description:     "A fully featured test relay",
-				Pubkey:          "pubkey123",
-				SupportedNIPs:   []int{1, 11, 42},
-				Software:        "nostr-rs-relay",
-				Version:         "0.8.0",
-				Health:          "online",
-				LatencyMs:       50,
-				LastChecked:     time.Now(),
-				CountryCode:     "US",
-				PaymentRequired: true,
-				AuthRequired:    true,
-				ContentPolicy:   "sfw",
-				Moderation:      "strict",
+				URL:              "wss://full.example.com",
+				Name:             "Full Relay",
+				Description:      "A fully featured test relay",
+				Pubkey:           "pubkey123",
+				SupportedNIPs:    []int{1, 11, 42},
+				Software:         "nostr-rs-relay",
+				Version:          "0.8.0",
+				Health:           "online",
+				LatencyMs:        50,
+				LastChecked:      time.Now(),
+				CountryCode:      "US",
+				PaymentRequired:  true,
+				AuthRequired:     true,
+				ContentPolicy:    "sfw",
+				Moderation:       "strict",
 				ModerationPolicy: "https://example.com/rules",
-				Community:       "Bitcoin",
-				Languages:       []string{"en", "es"},
+				Community:        "Bitcoin",
+				Languages:        []string{"en", "es"},
 			},
 			checkTags: map[string][]string{
 				"d":                 {"wss://full.example.com"},
@@ -480,7 +480,7 @@ func TestCreateEvent_LanguageTags(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:         "wss://multilang.example.com",
@@ -513,7 +513,7 @@ func TestCreateEvent_TopicsAndAtmosphere(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:         "wss://annotated.example.com",
@@ -592,7 +592,7 @@ func TestGetPublicKey(t *testing.T) {
 			}
 
 			publisher, _, cacheClient := setupTestPublisher(t, cfg)
-			defer cacheClient.Close()
+			defer func() { _ = cacheClient.Close() }()
 
 			pk := publisher.GetPublicKey()
 
@@ -621,7 +621,7 @@ func TestGetLastPublish(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("initial value is zero time", func(t *testing.T) {
 		lastPublish := publisher.GetLastPublish()
@@ -657,7 +657,7 @@ func TestGetPublishCount(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("initial value is zero", func(t *testing.T) {
 		count := publisher.GetPublishCount()
@@ -687,7 +687,7 @@ func TestGetRelaysPublished(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	t.Run("initial value is zero", func(t *testing.T) {
 		count := publisher.GetRelaysPublished()
@@ -717,7 +717,7 @@ func TestPublisher_ConcurrentAccess(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	// Test concurrent access to getter methods
 	done := make(chan bool)
@@ -750,7 +750,7 @@ func TestPublisher_CreateEventSignatureValidity(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:         "wss://test.example.com",
@@ -786,7 +786,7 @@ func TestPublisher_CreateEventExpiration(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:         "wss://test.example.com",
@@ -835,7 +835,7 @@ func TestPublisher_NIPTagFormatting(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:           "wss://test.example.com",
@@ -881,7 +881,7 @@ func TestPublisher_EmptyNIPsHandling(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:           "wss://test.example.com",
@@ -909,7 +909,7 @@ func TestPublisher_ZeroLatencyHandling(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	entry := &cache.RelayEntry{
 		URL:         "wss://test.example.com",
@@ -937,7 +937,7 @@ func TestPublisher_PaymentAndAdmissionTags(t *testing.T) {
 	}
 
 	publisher, _, cacheClient := setupTestPublisher(t, cfg)
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	tests := []struct {
 		name            string

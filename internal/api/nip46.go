@@ -50,7 +50,7 @@ func (s *Server) NIP46ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	if relayURL == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(NIP46ScoreResponse{Error: "relay URL required"})
+		_ = json.NewEncoder(w).Encode(NIP46ScoreResponse{Error: "relay URL required"})
 		return
 	}
 
@@ -58,7 +58,7 @@ func (s *Server) NIP46ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(relayURL, "wss://") && !strings.HasPrefix(relayURL, "ws://") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(NIP46ScoreResponse{
+		_ = json.NewEncoder(w).Encode(NIP46ScoreResponse{
 			URL:   relayURL,
 			Error: "invalid relay URL: must start with wss:// or ws://",
 		})
@@ -70,7 +70,7 @@ func (s *Server) NIP46ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(NIP46ScoreResponse{
+		_ = json.NewEncoder(w).Encode(NIP46ScoreResponse{
 			URL:   relayURL,
 			Error: "internal server error",
 		})
@@ -80,7 +80,7 @@ func (s *Server) NIP46ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	if entry == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(NIP46ScoreResponse{
+		_ = json.NewEncoder(w).Encode(NIP46ScoreResponse{
 			URL:            relayURL,
 			Score:          0,
 			Recommendation: "unknown",
@@ -100,7 +100,7 @@ func (s *Server) NIP46ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // calculateNIP46Score computes a 0-100 score for NIP-46 suitability.
@@ -131,10 +131,11 @@ func calculateNIP46Score(entry *cache.RelayEntry) (int, []string) {
 	score := 100
 
 	// Health deductions
-	if entry.Health == "degraded" {
+	switch entry.Health {
+	case "degraded":
 		score -= 20
 		reasons = append(reasons, "relay health is degraded (-20)")
-	} else if entry.Health == "online" {
+	case "online":
 		reasons = append(reasons, "relay is online")
 	}
 
@@ -182,4 +183,3 @@ func scoreToRecommendation(score int) string {
 		return "avoid"
 	}
 }
-

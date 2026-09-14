@@ -78,7 +78,7 @@ func (p *PeerDiscovery) discoverFromRelay(ctx context.Context, relayURL string) 
 		slog.Debug("failed to connect for peer discovery", "url", relayURL, "error", err)
 		return
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// Subscribe to kind 30072 (relay directory entry) events from trusted peers
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{

@@ -81,7 +81,7 @@ func TestNew(t *testing.T) {
 				t.Error("New() client has nil rdb")
 			}
 
-			client.Close()
+			_ = client.Close()
 		})
 	}
 }
@@ -97,7 +97,7 @@ func TestClient_Close(t *testing.T) {
 
 func TestClient_Ping(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -119,7 +119,7 @@ func TestClient_Ping(t *testing.T) {
 
 func TestClient_SetRelayEntry_GetRelayEntry(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -231,7 +231,7 @@ func TestClient_SetRelayEntry_GetRelayEntry(t *testing.T) {
 
 func TestClient_GetRelaysByNIP(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -255,9 +255,9 @@ func TestClient_GetRelaysByNIP(t *testing.T) {
 		SupportedNIPs: []int{42},
 	}
 
-	client.SetRelayEntry(ctx, relay1, time.Hour)
-	client.SetRelayEntry(ctx, relay2, time.Hour)
-	client.SetRelayEntry(ctx, relay3, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay1, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay2, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay3, time.Hour)
 
 	tests := []struct {
 		name      string
@@ -315,7 +315,7 @@ func TestClient_GetRelaysByNIP(t *testing.T) {
 
 func TestClient_GetRelaysByLocation(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -345,10 +345,10 @@ func TestClient_GetRelaysByLocation(t *testing.T) {
 		// No CountryCode
 	}
 
-	client.SetRelayEntry(ctx, relay1, time.Hour)
-	client.SetRelayEntry(ctx, relay2, time.Hour)
-	client.SetRelayEntry(ctx, relay3, time.Hour)
-	client.SetRelayEntry(ctx, relay4, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay1, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay2, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay3, time.Hour)
+	_ = client.SetRelayEntry(ctx, relay4, time.Hour)
 
 	tests := []struct {
 		name        string
@@ -406,7 +406,7 @@ func TestClient_GetRelaysByLocation(t *testing.T) {
 
 func TestClient_SetPubkeyRelay_GetPubkeyRelays(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -492,7 +492,7 @@ func TestClient_SetPubkeyRelay_GetPubkeyRelays(t *testing.T) {
 
 func TestClient_SetActivity_GetActivity_ClearActivity(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -617,7 +617,7 @@ func TestClient_SetActivity_GetActivity_ClearActivity(t *testing.T) {
 
 func TestClient_GetActiveStreams(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -645,9 +645,9 @@ func TestClient_GetActiveStreams(t *testing.T) {
 			ExpiresAt: now.Add(15 * time.Minute),
 		}
 
-		client.SetActivity(ctx, stream1, 2*time.Hour)
-		client.SetActivity(ctx, stream2, 2*time.Hour)
-		client.SetActivity(ctx, nonStream, 15*time.Minute)
+		_ = client.SetActivity(ctx, stream1, 2*time.Hour)
+		_ = client.SetActivity(ctx, stream2, 2*time.Hour)
+		_ = client.SetActivity(ctx, nonStream, 15*time.Minute)
 
 		streams, err := client.GetActiveStreams(ctx)
 		if err != nil {
@@ -688,7 +688,7 @@ func TestClient_GetActiveStreams(t *testing.T) {
 
 	t.Run("get active streams when none exist", func(t *testing.T) {
 		client2, _ := setupTestCache(t)
-		defer client2.Close()
+		defer func() { _ = client2.Close() }()
 
 		streams, err := client2.GetActiveStreams(ctx)
 		if err != nil {
@@ -754,7 +754,7 @@ func TestClient_GetActiveStreams(t *testing.T) {
 
 func TestRelayEntryHealthIndex(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -785,7 +785,7 @@ func TestRelayEntryHealthIndex(t *testing.T) {
 
 func TestInventoryMarkers(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -813,7 +813,7 @@ func TestInventoryMarkers(t *testing.T) {
 
 func TestWhitelist(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -871,7 +871,7 @@ func TestWhitelist(t *testing.T) {
 
 func TestBlacklist(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -916,7 +916,7 @@ func TestBlacklist(t *testing.T) {
 
 func TestTrustedPeers(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -959,7 +959,7 @@ func TestTrustedPeers(t *testing.T) {
 
 func TestDiscoveryDeduplication(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -984,7 +984,7 @@ func TestDiscoveryDeduplication(t *testing.T) {
 	})
 
 	t.Run("get seen relays", func(t *testing.T) {
-		client.MarkRelaySeen(ctx, "wss://another-relay.example.com")
+		_, _ = client.MarkRelaySeen(ctx, "wss://another-relay.example.com")
 
 		seen, err := client.GetSeenRelays(ctx)
 		if err != nil {
@@ -1012,7 +1012,7 @@ func TestDiscoveryDeduplication(t *testing.T) {
 
 func TestRelayEntryTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1053,7 +1053,7 @@ func TestRelayEntryTTLExpiration(t *testing.T) {
 
 func TestHealthKeyTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1100,7 +1100,7 @@ func TestHealthKeyTTLExpiration(t *testing.T) {
 
 func TestNIPIndexTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1142,7 +1142,7 @@ func TestNIPIndexTTLExpiration(t *testing.T) {
 
 func TestLocationIndexTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1184,7 +1184,7 @@ func TestLocationIndexTTLExpiration(t *testing.T) {
 
 func TestActivityTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1255,7 +1255,7 @@ func TestActivityTTLExpiration(t *testing.T) {
 
 func TestPubkeyRelayTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1299,7 +1299,7 @@ func TestPubkeyRelayTTLExpiration(t *testing.T) {
 
 func TestModerationIndexTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1341,7 +1341,7 @@ func TestModerationIndexTTLExpiration(t *testing.T) {
 
 func TestContentPolicyIndexTTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1383,7 +1383,7 @@ func TestContentPolicyIndexTTLExpiration(t *testing.T) {
 
 func TestStats(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1442,8 +1442,8 @@ func TestStats(t *testing.T) {
 	})
 
 	t.Run("get all stats", func(t *testing.T) {
-		client.SetStat(ctx, "discovery:nip65", 50)
-		client.SetStat(ctx, "discovery:nip66", 25)
+		_ = client.SetStat(ctx, "discovery:nip65", 50)
+		_ = client.SetStat(ctx, "discovery:nip66", 25)
 
 		stats, err := client.GetAllStats(ctx)
 		if err != nil {
@@ -1458,7 +1458,7 @@ func TestStats(t *testing.T) {
 
 func TestClient_SetUserNIP65_GetUserNIP65(t *testing.T) {
 	client, _ := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -1546,7 +1546,7 @@ func TestClient_SetUserNIP65_GetUserNIP65(t *testing.T) {
 
 func TestUserNIP65TTLExpiration(t *testing.T) {
 	client, mr := setupTestCache(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 

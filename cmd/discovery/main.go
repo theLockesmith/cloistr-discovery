@@ -60,7 +60,7 @@ func main() {
 		slog.Error("failed to connect to cache", "error", err, "url", cfg.CacheURL)
 		os.Exit(1)
 	}
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	// Verify cache connection
 	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)

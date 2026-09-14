@@ -176,9 +176,10 @@ func TestUserRelaysHandler_EnrichWithHealth(t *testing.T) {
 	// Check that the first relay (monitored) has health data
 	var monitoredRelay, unmonitoredRelay *UserRelayEntry
 	for i := range resp.Relays {
-		if resp.Relays[i].URL == "wss://relay.damus.io" {
+		switch resp.Relays[i].URL {
+		case "wss://relay.damus.io":
 			monitoredRelay = &resp.Relays[i]
-		} else if resp.Relays[i].URL == "wss://unmonitored.relay.com" {
+		case "wss://unmonitored.relay.com":
 			unmonitoredRelay = &resp.Relays[i]
 		}
 	}

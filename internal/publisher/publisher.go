@@ -169,8 +169,8 @@ func (p *Publisher) publishAll(ctx context.Context) {
 	)
 
 	// Update stats
-	p.cache.SetStat(ctx, "publisher:last_publish", time.Now().Unix())
-	p.cache.SetStat(ctx, "publisher:relays_published", published)
+	_ = p.cache.SetStat(ctx, "publisher:last_publish", time.Now().Unix())
+	_ = p.cache.SetStat(ctx, "publisher:relays_published", published)
 }
 
 // publishToRelay connects to a single relay, authenticates if needed, and publishes all events.
@@ -181,7 +181,7 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 		metrics.PublishErrorsTotal.WithLabelValues(relayURL, "connection").Inc()
 		return 0
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	var published int64
 	authAttempted := false
@@ -320,7 +320,7 @@ func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
 	}
 
 	// Sign the event
-	event.Sign(p.sk)
+	_ = event.Sign(p.sk)
 
 	return event
 }

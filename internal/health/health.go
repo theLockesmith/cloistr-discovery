@@ -221,7 +221,7 @@ func (r *Registry) Handler() http.HandlerFunc {
 		} else {
 			// Simple text response for basic health checks
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte(string(overall)))
+			_, _ = w.Write([]byte(string(overall)))
 		}
 	}
 }

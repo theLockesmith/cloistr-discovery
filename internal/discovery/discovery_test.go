@@ -134,7 +134,7 @@ func TestNewCoordinator(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create cache client: %v", err)
 			}
-			defer cacheClient.Close()
+			defer func() { _ = cacheClient.Close() }()
 
 			output := make(chan string, tt.wantChannelCap)
 			coordinator := NewCoordinator(tt.cfg, cacheClient, output)
@@ -196,7 +196,7 @@ func TestNewCoordinator(t *testing.T) {
 func TestCoordinator_SubmitRelay(t *testing.T) {
 	coordinator, mr, cacheClient, _ := setupTestCoordinator(t, nil)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := context.Background()
 
@@ -344,7 +344,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 	t.Run("processes new relay successfully", func(t *testing.T) {
 		coordinator, mr, cacheClient, output := setupTestCoordinator(t, nil)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		discovered := DiscoveredRelay{
 			URL:    "wss://new-relay.example.com",
@@ -385,7 +385,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 	t.Run("normalizes URL before processing", func(t *testing.T) {
 		coordinator, mr, cacheClient, output := setupTestCoordinator(t, nil)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		discovered := DiscoveredRelay{
 			URL:    "wss://relay-with-slash.example.com/",
@@ -407,7 +407,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 	t.Run("ignores empty URL after normalization", func(t *testing.T) {
 		coordinator, mr, cacheClient, output := setupTestCoordinator(t, nil)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		discovered := DiscoveredRelay{
 			URL:    "",
@@ -428,7 +428,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 	t.Run("skips blacklisted relay", func(t *testing.T) {
 		coordinator, mr, cacheClient, output := setupTestCoordinator(t, nil)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		// Add relay to blacklist
 		blacklistedURL := "wss://blacklisted.example.com"
@@ -462,7 +462,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 	t.Run("deduplicates already seen relay", func(t *testing.T) {
 		coordinator, mr, cacheClient, output := setupTestCoordinator(t, nil)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		relayURL := "wss://duplicate.example.com"
 
@@ -497,7 +497,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 	t.Run("tracks stats for different sources", func(t *testing.T) {
 		coordinator, mr, cacheClient, output := setupTestCoordinator(t, nil)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		sources := []string{"hosted", "nip65", "nip66", "peers", "manual"}
 
@@ -547,7 +547,7 @@ func TestCoordinator_HandleDiscoveredRelay(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create cache client: %v", err)
 		}
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		output := make(chan string, 1)
 		coordinator := NewCoordinator(cfg, cacheClient, output)
@@ -587,7 +587,7 @@ func TestCoordinator_GetLastFetchTimes(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		times := coordinator.GetLastFetchTimes()
 
@@ -615,7 +615,7 @@ func TestCoordinator_GetLastFetchTimes(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		times := coordinator.GetLastFetchTimes()
 
@@ -634,7 +634,7 @@ func TestCoordinator_GetLastFetchTimes(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		times := coordinator.GetLastFetchTimes()
 
@@ -682,7 +682,7 @@ func TestCoordinator_IsNIP65Enabled(t *testing.T) {
 			}
 			coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 			defer mr.Close()
-			defer cacheClient.Close()
+			defer func() { _ = cacheClient.Close() }()
 
 			result := coordinator.IsNIP65Enabled()
 			if result != tt.want {
@@ -720,7 +720,7 @@ func TestCoordinator_IsNIP66Enabled(t *testing.T) {
 			}
 			coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 			defer mr.Close()
-			defer cacheClient.Close()
+			defer func() { _ = cacheClient.Close() }()
 
 			result := coordinator.IsNIP66Enabled()
 			if result != tt.want {
@@ -740,7 +740,7 @@ func TestCoordinator_NIP65LastCrawl(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		lastCrawl := coordinator.NIP65LastCrawl()
 		if !lastCrawl.IsZero() {
@@ -757,7 +757,7 @@ func TestCoordinator_NIP65LastCrawl(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		// Initially zero
 		lastCrawl := coordinator.NIP65LastCrawl()
@@ -777,7 +777,7 @@ func TestCoordinator_NIP66LastConsume(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		lastConsume := coordinator.NIP66LastConsume()
 		if !lastConsume.IsZero() {
@@ -794,7 +794,7 @@ func TestCoordinator_NIP66LastConsume(t *testing.T) {
 		}
 		coordinator, mr, cacheClient, _ := setupTestCoordinator(t, cfg)
 		defer mr.Close()
-		defer cacheClient.Close()
+		defer func() { _ = cacheClient.Close() }()
 
 		// Initially zero
 		lastConsume := coordinator.NIP66LastConsume()
@@ -807,7 +807,7 @@ func TestCoordinator_NIP66LastConsume(t *testing.T) {
 func TestCoordinator_GetStats(t *testing.T) {
 	coordinator, mr, cacheClient, _ := setupTestCoordinator(t, nil)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := context.Background()
 
@@ -864,7 +864,7 @@ func TestDiscoveredRelay_SourceValues(t *testing.T) {
 func TestCoordinator_ConcurrentSubmit(t *testing.T) {
 	coordinator, mr, cacheClient, _ := setupTestCoordinator(t, nil)
 	defer mr.Close()
-	defer cacheClient.Close()
+	defer func() { _ = cacheClient.Close() }()
 
 	ctx := context.Background()
 
@@ -874,7 +874,7 @@ func TestCoordinator_ConcurrentSubmit(t *testing.T) {
 		go func(n int) {
 			for j := 0; j < 10; j++ {
 				url := "wss://concurrent-" + string(rune(n)) + "-" + string(rune(j)) + ".example.com"
-				coordinator.SubmitRelay(ctx, url)
+				_ = coordinator.SubmitRelay(ctx, url)
 			}
 			done <- true
 		}(i)

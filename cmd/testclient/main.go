@@ -206,14 +206,14 @@ func publishInventory(ctx context.Context, relayURL, sk, inventoryRelayURL strin
 		Content: "",
 	}
 
-	event.Sign(sk)
+	_ = event.Sign(sk)
 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
 		fmt.Printf("Error connecting to relay: %v\n", err)
 		os.Exit(1)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	err = relay.Publish(ctx, *event)
 	if err != nil {
@@ -252,14 +252,14 @@ func publishActivity(ctx context.Context, relayURL, sk, activityType string) {
 		)
 	}
 
-	event.Sign(sk)
+	_ = event.Sign(sk)
 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
 		fmt.Printf("Error connecting to relay: %v\n", err)
 		os.Exit(1)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	err = relay.Publish(ctx, *event)
 	if err != nil {
@@ -306,14 +306,14 @@ func publishQuery(ctx context.Context, relayURL, sk, queryType, targetPubkey, he
 		Content:   "",
 	}
 
-	event.Sign(sk)
+	_ = event.Sign(sk)
 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
 	if err != nil {
 		fmt.Printf("Error connecting to relay: %v\n", err)
 		os.Exit(1)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	err = relay.Publish(ctx, *event)
 	if err != nil {
@@ -399,7 +399,7 @@ func queryHTTP(ctx context.Context, apiURL, targetPubkey, health string) {
 		}
 
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		fmt.Printf("Status: %d\n", resp.StatusCode)
 
@@ -424,7 +424,7 @@ func queryHTTP(ctx context.Context, apiURL, targetPubkey, health string) {
 		return
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	fmt.Printf("Status: %d\n", resp.StatusCode)
 	var data interface{}
@@ -447,7 +447,7 @@ func listenForEvents(ctx context.Context, relayURL string) {
 		fmt.Printf("Error connecting to relay: %v\n", err)
 		os.Exit(1)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	since := nostr.Timestamp(time.Now().Add(-5 * time.Minute).Unix())
 	// Listen for all NDP kinds for testing compatibility

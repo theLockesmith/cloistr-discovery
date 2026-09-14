@@ -77,7 +77,7 @@ func (h *HostedFetcher) fetch(ctx context.Context) {
 		slog.Error("failed to fetch hosted relay list", "url", h.cfg.HostedRelayListURL, "error", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("hosted relay list returned non-OK status", "status", resp.StatusCode)

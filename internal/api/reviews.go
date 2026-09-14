@@ -76,14 +76,14 @@ func (s *Server) RelayReviewsHandler(w http.ResponseWriter, r *http.Request) {
 	relayURL := q.Get("url")
 	if relayURL == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "url parameter required"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "url parameter required"})
 		return
 	}
 
 	// Validate URL format
 	if !strings.HasPrefix(relayURL, "wss://") && !strings.HasPrefix(relayURL, "ws://") {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid relay URL format"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid relay URL format"})
 		return
 	}
 
@@ -278,7 +278,7 @@ func fetchReviewsFromRelay(ctx context.Context, relayURL, dTag string) ([]*nostr
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	sub, err := relay.Subscribe(ctx, []nostr.Filter{
 		{

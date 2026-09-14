@@ -26,29 +26,29 @@ type CompareResponse struct {
 
 // CompareRelay represents a relay in the comparison with its full data.
 type CompareRelay struct {
-	URL      string             `json:"url"`
-	Found    bool               `json:"found"`
-	Relay    *cache.RelayEntry  `json:"relay,omitempty"`
+	URL      string               `json:"url"`
+	Found    bool                 `json:"found"`
+	Relay    *cache.RelayEntry    `json:"relay,omitempty"`
 	Features *RelayFeatureSummary `json:"features,omitempty"`
 }
 
 // RelayFeatureSummary provides a quick feature overview for comparison.
 type RelayFeatureSummary struct {
-	NIPCount        int      `json:"nip_count"`
-	HasNIP42Auth    bool     `json:"has_nip42_auth"`
-	HasNIP65Lists   bool     `json:"has_nip65_lists"`
-	HasNIP96Media   bool     `json:"has_nip96_media"`
-	HasNIP50Search  bool     `json:"has_nip50_search"`
-	LatencyCategory string   `json:"latency_category"` // fast, medium, slow, unknown
-	AccessType      string   `json:"access_type"`      // free, auth-required, paid, paid+auth
+	NIPCount        int    `json:"nip_count"`
+	HasNIP42Auth    bool   `json:"has_nip42_auth"`
+	HasNIP65Lists   bool   `json:"has_nip65_lists"`
+	HasNIP96Media   bool   `json:"has_nip96_media"`
+	HasNIP50Search  bool   `json:"has_nip50_search"`
+	LatencyCategory string `json:"latency_category"` // fast, medium, slow, unknown
+	AccessType      string `json:"access_type"`      // free, auth-required, paid, paid+auth
 }
 
 // ComparisonData provides aggregate comparison insights.
 type ComparisonData struct {
-	CommonNIPs     []int             `json:"common_nips"`
-	FastestRelay   string            `json:"fastest_relay,omitempty"`
-	HealthySummary map[string]int    `json:"healthy_summary"` // online: 2, degraded: 1, etc.
-	NIPCoverage    map[int][]string  `json:"nip_coverage"`    // NIP -> list of relay URLs that support it
+	CommonNIPs     []int            `json:"common_nips"`
+	FastestRelay   string           `json:"fastest_relay,omitempty"`
+	HealthySummary map[string]int   `json:"healthy_summary"` // online: 2, degraded: 1, etc.
+	NIPCoverage    map[int][]string `json:"nip_coverage"`    // NIP -> list of relay URLs that support it
 }
 
 // CompareRelaysHandler handles GET /api/v1/relays/compare
@@ -75,14 +75,14 @@ func (s *Server) CompareRelaysHandler(w http.ResponseWriter, r *http.Request) {
 	urlsParam := r.URL.Query().Get("urls")
 	if urlsParam == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(CompareResponse{Error: "urls parameter required"})
+		_ = json.NewEncoder(w).Encode(CompareResponse{Error: "urls parameter required"})
 		return
 	}
 
 	urls := parseRelayURLs(urlsParam)
 	if len(urls) < minCompareRelays {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(CompareResponse{Error: "at least 2 relay URLs required"})
+		_ = json.NewEncoder(w).Encode(CompareResponse{Error: "at least 2 relay URLs required"})
 		return
 	}
 	if len(urls) > maxCompareRelays {
@@ -96,7 +96,7 @@ func (s *Server) CompareRelaysHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to batch get relay entries for comparison", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(CompareResponse{Error: "internal server error"})
+		_ = json.NewEncoder(w).Encode(CompareResponse{Error: "internal server error"})
 		return
 	}
 
@@ -212,7 +212,7 @@ func buildComparisonData(entries []*cache.RelayEntry) ComparisonData {
 
 	// Track NIPs across all relays
 	nipCount := make(map[int]int)
-	var fastestLatency int = -1
+	var fastestLatency = -1
 	var fastestURL string
 
 	for _, entry := range entries {

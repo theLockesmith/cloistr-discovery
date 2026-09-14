@@ -62,7 +62,7 @@ func (s *Server) RelayPrefsHandler(w http.ResponseWriter, r *http.Request) {
 	if err := validatePubkey(pubkey); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -91,7 +91,7 @@ func (s *Server) RelayPrefsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (s *Server) RelayPrefsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // fetchRelayPrefs fetches relay preferences for a pubkey.
@@ -153,7 +153,7 @@ func (s *Server) fetchRelayPrefs(ctx context.Context, pubkey string) ([]RelayPre
 		slog.Debug("failed to connect to cloistr relay", "error", err)
 		return nil, "default", err
 	}
-	defer relay.Close()
+	defer func() { _ = relay.Close() }()
 
 	// First try kind:30078 d=cloistr-relays
 	cloistrEvent, err := s.fetchCloistrRelays(fetchCtx, relay, pubkey)
@@ -261,9 +261,10 @@ func parseRelayTags(tags nostr.Tags) []RelayPrefsEntry {
 
 			if len(tag) >= 3 {
 				marker := tag[2]
-				if marker == "read" {
+				switch marker {
+				case "read":
 					entry.Write = false
-				} else if marker == "write" {
+				case "write":
 					entry.Read = false
 				}
 			}

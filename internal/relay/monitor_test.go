@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
 	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/config"
+	"github.com/alicebob/miniredis/v2"
 )
 
 // setupTestMonitor creates a test monitor with miniredis cache.
@@ -579,7 +579,7 @@ func TestMonitor_CheckRelay(t *testing.T) {
 			}
 
 			w.Header().Set("Content-Type", "application/nostr+json")
-			json.NewEncoder(w).Encode(nip11Info)
+			_ = json.NewEncoder(w).Encode(nip11Info)
 		}))
 		defer ts.Close()
 
@@ -630,7 +630,7 @@ func TestMonitor_CheckRelay(t *testing.T) {
 			// Simulate slow response
 			time.Sleep(6 * time.Second)
 			w.Header().Set("Content-Type", "application/nostr+json")
-			json.NewEncoder(w).Encode(nip11Info)
+			_ = json.NewEncoder(w).Encode(nip11Info)
 		}))
 		defer ts.Close()
 
@@ -674,7 +674,7 @@ func TestMonitor_CheckRelay(t *testing.T) {
 	t.Run("handles invalid JSON", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/nostr+json")
-			w.Write([]byte("invalid json {{{"))
+			_, _ = w.Write([]byte("invalid json {{{"))
 		}))
 		defer ts.Close()
 
@@ -724,7 +724,6 @@ type transportOverride struct {
 func (t *transportOverride) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Redirect all requests to test server
 	req.URL.Scheme = "http"
-	req.URL.Host = req.URL.Host // Keep original for testing URL conversion
 
 	// Create new request to test server
 	testReq, err := http.NewRequest(req.Method, t.testServerURL, req.Body)
