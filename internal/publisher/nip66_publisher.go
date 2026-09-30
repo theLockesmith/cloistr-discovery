@@ -23,6 +23,7 @@ type NIP66Publisher struct {
 	cache *cache.Client
 	sk    string // hex private key
 	pk    string // hex public key
+	delta *deltaTracker
 
 	mu                sync.RWMutex
 	lastPublish       time.Time
@@ -39,6 +40,7 @@ func NewNIP66Publisher(cfg *config.Config, cache *cache.Client, sk, pk string) *
 		cache: cache,
 		sk:    sk,
 		pk:    pk,
+		delta: newDeltaTracker(),
 	}
 }
 
@@ -109,6 +111,7 @@ func (p *NIP66Publisher) publishAnnouncement(ctx context.Context) {
 }
 
 // publishRelayStatus publishes kind 30166 relay status events for all monitored relays.
+// Between full refreshes, only relays whose metadata changed are republished.
 func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 	start := time.Now()
 	defer func() {
@@ -116,7 +119,9 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 		metrics.NIP66PublishCyclesTotal.Inc()
 	}()
 
-	// Get all relay URLs from cache
+	refreshInterval := time.Duration(p.cfg.PublishRefreshInterval) * time.Minute
+	fullRefresh := p.delta.needsFullRefresh(refreshInterval)
+
 	urls, err := p.cache.GetAllRelayURLs(ctx)
 	if err != nil {
 		slog.Error("failed to get relay URLs for NIP-66 publishing", "error", err)
@@ -128,21 +133,50 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 		return
 	}
 
-	// Build events from cache
-	var events []*nostr.Event
+	activeURLs := make(map[string]bool, len(urls))
+	for _, u := range urls {
+		activeURLs[u] = true
+	}
+	p.delta.prune(activeURLs)
+
+	type entryEvent struct {
+		entry *cache.RelayEntry
+		event *nostr.Event
+	}
+
+	var toPublish []entryEvent
+	var skipped int
 	for _, url := range urls {
 		entry, err := p.cache.GetRelayEntry(ctx, url)
 		if err != nil || entry == nil {
 			continue
 		}
-		// Only publish healthy relays (online or degraded) to avoid noise
 		if entry.Health == "offline" {
 			continue
 		}
-		events = append(events, p.createRelayStatusEvent(entry))
+		if !fullRefresh && !p.delta.changed(url, entry) {
+			skipped++
+			continue
+		}
+		toPublish = append(toPublish, entryEvent{entry: entry, event: p.createRelayStatusEvent(entry)})
 	}
 
-	slog.Info("publishing NIP-66 relay status events (kind 30166)", "count", len(events))
+	if len(toPublish) == 0 {
+		slog.Info("NIP-66 publish cycle: nothing changed", "skipped", skipped)
+		return
+	}
+
+	events := make([]*nostr.Event, len(toPublish))
+	for i, te := range toPublish {
+		events[i] = te.event
+	}
+
+	mode := "delta"
+	if fullRefresh {
+		mode = "full"
+	}
+	slog.Info("publishing NIP-66 relay status events (kind 30166)",
+		"count", len(events), "skipped", skipped, "mode", mode)
 
 	var published int64
 	for _, relayURL := range p.cfg.PublishRelays {
@@ -150,6 +184,13 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 		if count > published {
 			published = count
 		}
+	}
+
+	for _, te := range toPublish {
+		p.delta.record(te.entry.URL, te.entry)
+	}
+	if fullRefresh {
+		p.delta.markFullRefresh()
 	}
 
 	p.mu.Lock()
@@ -161,9 +202,7 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 	metrics.NIP66RelaysPublished.Set(float64(published))
 
 	slog.Info("published NIP-66 relay status events",
-		"published", published,
-		"total", len(events),
-	)
+		"published", published, "total", len(events), "mode", mode)
 }
 
 // createAnnouncementEvent creates a kind 10166 monitor announcement event.

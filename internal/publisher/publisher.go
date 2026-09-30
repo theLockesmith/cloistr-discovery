@@ -26,10 +26,11 @@ type Publisher struct {
 	cache  *cache.Client
 	sk     string // hex private key
 	pk     string // hex public key
+	delta  *deltaTracker
 
-	mu            sync.RWMutex
-	lastPublish   time.Time
-	publishCount  int64
+	mu              sync.RWMutex
+	lastPublish     time.Time
+	publishCount    int64
 	relaysPublished int64
 }
 
@@ -38,6 +39,7 @@ func New(cfg *config.Config, cache *cache.Client) (*Publisher, error) {
 	p := &Publisher{
 		cfg:   cfg,
 		cache: cache,
+		delta: newDeltaTracker(),
 	}
 
 	// Parse private key (supports hex or nsec format)
@@ -116,7 +118,9 @@ func (p *Publisher) Start(ctx context.Context) {
 	}
 }
 
-// publishAll publishes all relay entries to configured relays.
+// publishAll publishes relay entries to configured relays. On a full-refresh
+// cycle all relays are republished; between refreshes only relays whose
+// metadata changed since the last publish are sent.
 func (p *Publisher) publishAll(ctx context.Context) {
 	start := time.Now()
 	defer func() {
@@ -124,7 +128,9 @@ func (p *Publisher) publishAll(ctx context.Context) {
 		metrics.PublishCyclesTotal.Inc()
 	}()
 
-	// Get all relay URLs from cache
+	refreshInterval := time.Duration(p.cfg.PublishRefreshInterval) * time.Minute
+	fullRefresh := p.delta.needsFullRefresh(refreshInterval)
+
 	urls, err := p.cache.GetAllRelayURLs(ctx)
 	if err != nil {
 		slog.Error("failed to get relay URLs for publishing", "error", err)
@@ -137,17 +143,47 @@ func (p *Publisher) publishAll(ctx context.Context) {
 		return
 	}
 
-	// Build events from cache
-	var events []*nostr.Event
+	activeURLs := make(map[string]bool, len(urls))
+	for _, u := range urls {
+		activeURLs[u] = true
+	}
+	p.delta.prune(activeURLs)
+
+	type entryEvent struct {
+		entry *cache.RelayEntry
+		event *nostr.Event
+	}
+
+	var toPublish []entryEvent
+	var skipped int
 	for _, url := range urls {
 		entry, err := p.cache.GetRelayEntry(ctx, url)
 		if err != nil || entry == nil {
 			continue
 		}
-		events = append(events, p.createEvent(entry))
+		if !fullRefresh && !p.delta.changed(url, entry) {
+			skipped++
+			continue
+		}
+		toPublish = append(toPublish, entryEvent{entry: entry, event: p.createEvent(entry)})
 	}
 
-	slog.Info("publishing relay directory entries", "count", len(events))
+	if len(toPublish) == 0 {
+		slog.Info("publish cycle: nothing changed", "skipped", skipped)
+		return
+	}
+
+	events := make([]*nostr.Event, len(toPublish))
+	for i, te := range toPublish {
+		events[i] = te.event
+	}
+
+	mode := "delta"
+	if fullRefresh {
+		mode = "full"
+	}
+	slog.Info("publishing relay directory entries",
+		"count", len(events), "skipped", skipped, "mode", mode)
 
 	var published int64
 	for _, relayURL := range p.cfg.PublishRelays {
@@ -157,6 +193,13 @@ func (p *Publisher) publishAll(ctx context.Context) {
 		}
 	}
 
+	for _, te := range toPublish {
+		p.delta.record(te.entry.URL, te.entry)
+	}
+	if fullRefresh {
+		p.delta.markFullRefresh()
+	}
+
 	p.mu.Lock()
 	p.lastPublish = time.Now()
 	p.publishCount++
@@ -164,11 +207,8 @@ func (p *Publisher) publishAll(ctx context.Context) {
 	p.mu.Unlock()
 
 	slog.Info("published relay directory entries",
-		"published", published,
-		"total", len(events),
-	)
+		"published", published, "total", len(events), "mode", mode)
 
-	// Update stats
 	p.cache.SetStat(ctx, "publisher:last_publish", time.Now().Unix())
 	p.cache.SetStat(ctx, "publisher:relays_published", published)
 }
@@ -307,8 +347,12 @@ func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
 		tags = append(tags, nostr.Tag{"atmosphere", atm, strconv.Itoa(count)})
 	}
 
-	// Set expiration (next publish cycle + buffer)
-	expiresAt := time.Now().Add(time.Duration(p.cfg.PublishInterval*2) * time.Minute)
+	// Expiration: 2x the refresh interval so events survive between full refreshes
+	refreshMin := p.cfg.PublishRefreshInterval
+	if refreshMin == 0 {
+		refreshMin = p.cfg.PublishInterval
+	}
+	expiresAt := time.Now().Add(time.Duration(refreshMin*2) * time.Minute)
 	tags = append(tags, nostr.Tag{"expires", strconv.FormatInt(expiresAt.Unix(), 10)})
 
 	event := &nostr.Event{
