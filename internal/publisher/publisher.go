@@ -143,11 +143,18 @@ func (p *Publisher) publishAll(ctx context.Context) {
 		return
 	}
 
-	activeURLs := make(map[string]bool, len(urls))
-	for _, u := range urls {
-		activeURLs[u] = true
+	dedupEntries := deduplicateURLs(urls, func(u string) *cache.RelayEntry {
+		entry, _ := p.cache.GetRelayEntry(ctx, u)
+		return entry
+	})
+
+	slog.Info("relay deduplication", "raw", len(urls), "unique_hosts", len(dedupEntries))
+
+	activeNorm := make(map[string]bool, len(dedupEntries))
+	for _, e := range dedupEntries {
+		activeNorm[normalizeRelayURL(e.URL)] = true
 	}
-	p.delta.prune(activeURLs)
+	p.delta.prune(activeNorm)
 
 	type entryEvent struct {
 		entry *cache.RelayEntry
@@ -156,12 +163,9 @@ func (p *Publisher) publishAll(ctx context.Context) {
 
 	var toPublish []entryEvent
 	var skipped int
-	for _, url := range urls {
-		entry, err := p.cache.GetRelayEntry(ctx, url)
-		if err != nil || entry == nil {
-			continue
-		}
-		if !fullRefresh && !p.delta.changed(url, entry) {
+	for _, entry := range dedupEntries {
+		normURL := normalizeRelayURL(entry.URL)
+		if !fullRefresh && !p.delta.changed(normURL, entry) {
 			skipped++
 			continue
 		}
@@ -194,7 +198,7 @@ func (p *Publisher) publishAll(ctx context.Context) {
 	}
 
 	for _, te := range toPublish {
-		p.delta.record(te.entry.URL, te.entry)
+		p.delta.record(normalizeRelayURL(te.entry.URL), te.entry)
 	}
 	if fullRefresh {
 		p.delta.markFullRefresh()
@@ -274,9 +278,10 @@ func (p *Publisher) publishToRelay(ctx context.Context, relayURL string, events 
 
 // createEvent creates a kind 30072 event from a relay entry.
 func (p *Publisher) createEvent(entry *cache.RelayEntry) *nostr.Event {
+	normURL := normalizeRelayURL(entry.URL)
 	tags := nostr.Tags{
-		{"d", entry.URL},
-		{"relay", entry.URL},
+		{"d", normURL},
+		{"relay", normURL},
 		{"health", entry.Health},
 		{"last_checked", strconv.FormatInt(entry.LastChecked.Unix(), 10)},
 	}
