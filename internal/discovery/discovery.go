@@ -4,6 +4,7 @@ package discovery
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -221,7 +222,28 @@ func normalizeRelayURL(url string) string {
 		url = url[:len(url)-1]
 	}
 
+	// Drop a trailing DNS root dot on the host ("wss://relay.example.com.")
+	// so it doesn't become a separate relay from the plain hostname.
+	if rest, ok := strings.CutPrefix(url, "wss://"); ok {
+		url = "wss://" + trimHostRootDot(rest)
+	} else if rest, ok := strings.CutPrefix(url, "ws://"); ok {
+		url = "ws://" + trimHostRootDot(rest)
+	}
+
 	return url
+}
+
+// trimHostRootDot removes a trailing "." from the host portion of
+// host[:port][/path].
+func trimHostRootDot(rest string) string {
+	end := strings.IndexAny(rest, ":/")
+	if end == -1 {
+		end = len(rest)
+	}
+	if end > 0 && rest[end-1] == '.' {
+		return rest[:end-1] + rest[end:]
+	}
+	return rest
 }
 
 // GetStats returns discovery statistics.

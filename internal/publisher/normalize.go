@@ -1,6 +1,7 @@
 package publisher
 
 import (
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -20,10 +21,10 @@ func canonicalizeRelayURL(rawURL string) string {
 	u.Scheme = strings.ToLower(u.Scheme)
 	u.Host = strings.ToLower(u.Host)
 
-	host := u.Hostname()
+	u.Host = trimHostDot(u)
 	port := u.Port()
 	if (u.Scheme == "wss" && port == "443") || (u.Scheme == "ws" && port == "80") {
-		u.Host = host
+		u.Host = u.Hostname()
 	}
 
 	u.Path = strings.TrimRight(u.Path, "/")
@@ -44,10 +45,10 @@ func hostKey(rawURL string) string {
 	u.Scheme = strings.ToLower(u.Scheme)
 	u.Host = strings.ToLower(u.Host)
 
-	host := u.Hostname()
+	u.Host = trimHostDot(u)
 	port := u.Port()
 	if (u.Scheme == "wss" && port == "443") || (u.Scheme == "ws" && port == "80") {
-		u.Host = host
+		u.Host = u.Hostname()
 	}
 
 	u.Path = ""
@@ -56,6 +57,16 @@ func hostKey(rawURL string) string {
 	u.Fragment = ""
 
 	return u.String()
+}
+
+// trimHostDot drops a trailing DNS root dot ("relay.example.com.") so the
+// fully-qualified form groups with the plain hostname.
+func trimHostDot(u *url.URL) string {
+	host := strings.TrimSuffix(u.Hostname(), ".")
+	if port := u.Port(); port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	return host
 }
 
 func hasPath(rawURL string) bool {

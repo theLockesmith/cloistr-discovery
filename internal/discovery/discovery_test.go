@@ -272,6 +272,21 @@ func TestNormalizeRelayURL(t *testing.T) {
 			expected: "wss://relay.example.com",
 		},
 		{
+			name:     "trailing DNS root dot on host",
+			input:    "wss://adre.su.",
+			expected: "wss://adre.su",
+		},
+		{
+			name:     "trailing root dot with port and path",
+			input:    "wss://relay.example.com.:8080/inbox/",
+			expected: "wss://relay.example.com:8080/inbox",
+		},
+		{
+			name:     "dot inside path is kept",
+			input:    "wss://relay.example.com/v1.",
+			expected: "wss://relay.example.com/v1.",
+		},
+		{
 			name:     "ws URL",
 			input:    "ws://localhost:7777",
 			expected: "ws://localhost:7777",

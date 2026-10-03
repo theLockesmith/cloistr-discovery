@@ -24,6 +24,10 @@ func TestCanonicalizeRelayURL(t *testing.T) {
 		{"wss://RELAY.EXAMPLE.COM/Foo", "wss://relay.example.com/Foo"},
 		{"wss://relay.example.com/path/", "wss://relay.example.com/path"},
 		{"wss://relay.example.com/path?q=1#frag", "wss://relay.example.com/path"},
+		{"wss://adre.su.", "wss://adre.su"},
+		{"wss://adre.su./marble", "wss://adre.su/marble"},
+		{"wss://relay.example.com.:443/x", "wss://relay.example.com/x"},
+		{"wss://relay.example.com.:8080", "wss://relay.example.com:8080"},
 		{"not-a-url", "not-a-url"},
 	}
 
@@ -46,6 +50,7 @@ func TestHostKey(t *testing.T) {
 		{"wss://relay.example.com:443/bar", "wss://relay.example.com"},
 		{"wss://relay.example.com:8080/path", "wss://relay.example.com:8080"},
 		{"wss://RELAY.EXAMPLE.COM", "wss://relay.example.com"},
+		{"wss://adre.su./marble", "wss://adre.su"},
 		{"not-a-url", "not-a-url"},
 	}
 
