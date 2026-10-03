@@ -71,6 +71,19 @@ func main() {
 	}
 	slog.Info("connected to cache", "url", cfg.CacheURL)
 
+	// One-time prune of excess path variants in the cache
+	pruneCtx, pruneCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	urlsBefore, _ := cacheClient.GetAllRelayURLs(pruneCtx)
+	pruned, pruneErr := cacheClient.PrunePathVariants(pruneCtx, cache.MaxPathVariantsPerHost)
+	urlsAfter, _ := cacheClient.GetAllRelayURLs(pruneCtx)
+	pruneCancel()
+	if pruneErr != nil {
+		slog.Warn("path variant prune failed", "error", pruneErr)
+	} else {
+		slog.Info("path variant prune complete",
+			"before", len(urlsBefore), "after", len(urlsAfter), "pruned", pruned)
+	}
+
 	// Initialize API server
 	apiServer := api.New(cfg, cacheClient)
 

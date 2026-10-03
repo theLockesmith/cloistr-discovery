@@ -1626,6 +1626,29 @@ func TestSetRelayEntry_PathVariantCap(t *testing.T) {
 	}
 }
 
+func TestStartupPrune(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Simulate startup: get before count, prune, get after count
+	before, _ := client.GetAllRelayURLs(ctx)
+	pruned, err := client.PrunePathVariants(ctx, MaxPathVariantsPerHost)
+	if err != nil {
+		t.Fatalf("startup prune error: %v", err)
+	}
+	after, _ := client.GetAllRelayURLs(ctx)
+
+	// Empty cache: nothing to prune
+	if pruned != 0 {
+		t.Errorf("expected 0 pruned on empty cache, got %d", pruned)
+	}
+	if len(before) != len(after) {
+		t.Errorf("before=%d after=%d should be equal", len(before), len(after))
+	}
+}
+
 func TestPrunePathVariants(t *testing.T) {
 	client, _ := setupTestCache(t)
 	defer client.Close()
