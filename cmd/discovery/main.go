@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -69,7 +70,7 @@ func main() {
 		slog.Error("cache ping failed", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("connected to cache", "url", cfg.CacheURL)
+	slog.Info("connected to cache", "url", redactURL(cfg.CacheURL))
 
 	// One-time prune of excess path variants in the cache
 	pruneCtx, pruneCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -244,4 +245,13 @@ func main() {
 		slog.Error("server shutdown error", "error", err)
 	}
 	slog.Info("shutdown complete")
+}
+
+// redactURL masks any password in a URL so it is safe to log.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<unparseable>"
+	}
+	return u.Redacted()
 }
