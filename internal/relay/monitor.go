@@ -5,6 +5,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -265,7 +266,9 @@ func (m *Monitor) handleDiscoveredRelay(ctx context.Context, url string) {
 		m.recordHealthCheckAndCalculateUptime(ctx, entry)
 
 		if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
-			slog.Error("failed to cache relay entry", "url", url, "error", err)
+			if !errors.Is(err, cache.ErrPathVariantCapReached) {
+				slog.Error("failed to cache relay entry", "url", url, "error", err)
+			}
 		}
 	}()
 }
@@ -443,7 +446,9 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 			mu.Unlock()
 
 			if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
-				slog.Error("failed to cache relay entry", "url", url, "error", err)
+				if !errors.Is(err, cache.ErrPathVariantCapReached) {
+					slog.Error("failed to cache relay entry", "url", url, "error", err)
+				}
 			}
 		}(relayURL)
 	}
@@ -479,7 +484,9 @@ func (m *Monitor) checkAllRelays(ctx context.Context) {
 				mu.Unlock()
 
 				if err := m.cache.SetRelayEntry(ctx, entry, cache.RelayEntryTTL); err != nil {
-					slog.Error("failed to cache relay entry", "url", url, "error", err)
+					if !errors.Is(err, cache.ErrPathVariantCapReached) {
+						slog.Error("failed to cache relay entry", "url", url, "error", err)
+					}
 				}
 			}(relayURL)
 		}

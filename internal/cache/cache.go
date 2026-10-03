@@ -5,13 +5,23 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
 	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/metrics"
 )
+
+// MaxPathVariantsPerHost is the maximum number of path variants allowed per host.
+const MaxPathVariantsPerHost = 3
+
+// ErrPathVariantCapReached is returned when a new path variant exceeds the per-host cap.
+var ErrPathVariantCapReached = errors.New("path variant cap reached for host")
 
 // TTL constants for cache entries.
 const (
@@ -130,8 +140,25 @@ type ExternalMonitorReport struct {
 }
 
 // SetRelayEntry caches a relay directory entry.
+// For URLs with a path component, it enforces a per-host cap on path variants.
+// Updates to existing entries always succeed; only new path variants are capped.
 func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.Duration) error {
 	metrics.CacheOperationsTotal.WithLabelValues("set_relay").Inc()
+
+	key := "relay:" + entry.URL
+
+	if urlHasPath(entry.URL) {
+		exists, _ := c.rdb.Exists(ctx, key).Result()
+		if exists == 0 {
+			hk := urlHostKey(entry.URL)
+			count := c.countPathVariantsForHost(ctx, hk)
+			if count >= MaxPathVariantsPerHost {
+				slog.Debug("path variant cap reached, dropping entry",
+					"url", entry.URL, "host", hk, "existing", count)
+				return ErrPathVariantCapReached
+			}
+		}
+	}
 
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -139,7 +166,6 @@ func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.
 		return fmt.Errorf("failed to marshal relay entry: %w", err)
 	}
 
-	key := "relay:" + entry.URL
 	if err := c.rdb.Set(ctx, key, data, ttl).Err(); err != nil {
 		metrics.CacheErrorsTotal.WithLabelValues("set_relay").Inc()
 		return fmt.Errorf("failed to set relay entry: %w", err)
@@ -208,6 +234,125 @@ func (c *Client) SetRelayEntry(ctx context.Context, entry *RelayEntry, ttl time.
 	}
 
 	return nil
+}
+
+func urlHasPath(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	p := strings.TrimRight(u.Path, "/")
+	return p != ""
+}
+
+func urlHostKey(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	host := u.Hostname()
+	port := u.Port()
+	if (u.Scheme == "wss" && port == "443") || (u.Scheme == "ws" && port == "80") {
+		u.Host = host
+	}
+	u.Path = ""
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+func (c *Client) countPathVariantsForHost(ctx context.Context, hostKey string) int {
+	pattern := "relay:" + hostKey + "/*"
+	var count int
+	var cursor uint64
+	for {
+		keys, next, err := c.rdb.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			break
+		}
+		count += len(keys)
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	return count
+}
+
+// PrunePathVariants removes excess path variants per host from the cache.
+// It keeps root entries and up to maxPerHost path variants, preferring
+// healthier entries. Returns the number of entries pruned.
+func (c *Client) PrunePathVariants(ctx context.Context, maxPerHost int) (int, error) {
+	urls, err := c.GetAllRelayURLs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get relay URLs for pruning: %w", err)
+	}
+
+	groups := make(map[string][]string)
+	for _, u := range urls {
+		hk := urlHostKey(u)
+		groups[hk] = append(groups[hk], u)
+	}
+
+	var pruned int
+	for _, groupURLs := range groups {
+		var roots []string
+		var paths []string
+		for _, u := range groupURLs {
+			if urlHasPath(u) {
+				paths = append(paths, u)
+			} else {
+				roots = append(roots, u)
+			}
+		}
+
+		if len(paths) <= maxPerHost {
+			continue
+		}
+
+		type scored struct {
+			url   string
+			rank  int
+			entry *RelayEntry
+		}
+		var items []scored
+		for _, u := range paths {
+			entry, _ := c.GetRelayEntry(ctx, u)
+			rank := 2
+			if entry != nil {
+				switch entry.Health {
+				case "online":
+					rank = 0
+				case "degraded":
+					rank = 1
+				}
+			}
+			items = append(items, scored{url: u, rank: rank, entry: entry})
+		}
+
+		// Sort: healthier first, shorter URL as tiebreaker
+		for i := 0; i < len(items)-1; i++ {
+			for j := i + 1; j < len(items); j++ {
+				if items[j].rank < items[i].rank ||
+					(items[j].rank == items[i].rank && len(items[j].url) < len(items[i].url)) {
+					items[i], items[j] = items[j], items[i]
+				}
+			}
+		}
+
+		for _, item := range items[maxPerHost:] {
+			key := "relay:" + item.url
+			c.rdb.Del(ctx, key)
+			c.rdb.Del(ctx, "relay:health:"+item.url)
+			pruned++
+			slog.Debug("pruned path variant", "url", item.url)
+		}
+	}
+
+	return pruned, nil
 }
 
 // GetRelayEntry retrieves a relay directory entry.

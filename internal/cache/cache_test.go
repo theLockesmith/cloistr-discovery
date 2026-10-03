@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -1582,5 +1583,97 @@ func TestUserNIP65TTLExpiration(t *testing.T) {
 	}
 	if retrieved != nil {
 		t.Error("GetUserNIP65() should return nil after TTL expires")
+	}
+}
+
+func TestSetRelayEntry_PathVariantCap(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Root URL always accepted
+	root := &RelayEntry{URL: "wss://relay.example.com", Health: "online", Name: "Root"}
+	if err := client.SetRelayEntry(ctx, root, time.Hour); err != nil {
+		t.Fatalf("root entry rejected: %v", err)
+	}
+
+	// First 3 path variants accepted
+	for i, path := range []string{"/alpha", "/bravo", "/charlie"} {
+		e := &RelayEntry{URL: "wss://relay.example.com" + path, Health: "online"}
+		if err := client.SetRelayEntry(ctx, e, time.Hour); err != nil {
+			t.Fatalf("path variant %d rejected: %v", i, err)
+		}
+	}
+
+	// 4th path variant rejected
+	e4 := &RelayEntry{URL: "wss://relay.example.com/delta", Health: "online"}
+	err := client.SetRelayEntry(ctx, e4, time.Hour)
+	if err != ErrPathVariantCapReached {
+		t.Errorf("expected ErrPathVariantCapReached, got %v", err)
+	}
+
+	// Update to existing path variant still works
+	existing := &RelayEntry{URL: "wss://relay.example.com/alpha", Health: "degraded"}
+	if err := client.SetRelayEntry(ctx, existing, time.Hour); err != nil {
+		t.Fatalf("update to existing path variant rejected: %v", err)
+	}
+
+	// Different host is independent
+	other := &RelayEntry{URL: "wss://other.example.com/path", Health: "online"}
+	if err := client.SetRelayEntry(ctx, other, time.Hour); err != nil {
+		t.Fatalf("different host rejected: %v", err)
+	}
+}
+
+func TestPrunePathVariants(t *testing.T) {
+	client, _ := setupTestCache(t)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Seed with entries that bypass the cap (simulating pre-existing data)
+	entries := []*RelayEntry{
+		{URL: "wss://relay.example.com", Health: "online", Name: "Root", Software: "strfry"},
+		{URL: "wss://relay.example.com/alpha", Health: "online"},
+		{URL: "wss://relay.example.com/bravo", Health: "degraded"},
+		{URL: "wss://relay.example.com/charlie", Health: "online"},
+		{URL: "wss://relay.example.com/delta", Health: "offline"},
+		{URL: "wss://relay.example.com/echo", Health: "online"},
+		{URL: "wss://other.example.com", Health: "online", Name: "Other"},
+		{URL: "wss://other.example.com/path", Health: "online"},
+	}
+
+	// Write directly to bypass the cap
+	for _, e := range entries {
+		data, _ := json.Marshal(e)
+		key := "relay:" + e.URL
+		client.rdb.Set(ctx, key, data, time.Hour)
+		client.rdb.Set(ctx, "relay:health:"+e.URL, e.Health, time.Hour)
+	}
+
+	pruned, err := client.PrunePathVariants(ctx, MaxPathVariantsPerHost)
+	if err != nil {
+		t.Fatalf("PrunePathVariants error: %v", err)
+	}
+
+	if pruned < 2 {
+		t.Errorf("expected at least 2 pruned (5 path variants - 3 cap), got %d", pruned)
+	}
+
+	// Root should survive
+	root, _ := client.GetRelayEntry(ctx, "wss://relay.example.com")
+	if root == nil {
+		t.Error("root entry should survive pruning")
+	}
+
+	// other.example.com should be untouched
+	other, _ := client.GetRelayEntry(ctx, "wss://other.example.com")
+	if other == nil {
+		t.Error("other host root should survive")
+	}
+	otherPath, _ := client.GetRelayEntry(ctx, "wss://other.example.com/path")
+	if otherPath == nil {
+		t.Error("other host path should survive (under cap)")
 	}
 }

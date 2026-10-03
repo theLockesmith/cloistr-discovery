@@ -142,7 +142,7 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 
 	activeNorm := make(map[string]bool, len(dedupEntries))
 	for _, e := range dedupEntries {
-		activeNorm[normalizeRelayURL(e.URL)] = true
+		activeNorm[canonicalizeRelayURL(e.URL)] = true
 	}
 	p.delta.prune(activeNorm)
 
@@ -157,7 +157,7 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 		if entry.Health == "offline" {
 			continue
 		}
-		normURL := normalizeRelayURL(entry.URL)
+		normURL := canonicalizeRelayURL(entry.URL)
 		if !fullRefresh && !p.delta.changed(normURL, entry) {
 			skipped++
 			continue
@@ -191,7 +191,7 @@ func (p *NIP66Publisher) publishRelayStatus(ctx context.Context) {
 	}
 
 	for _, te := range toPublish {
-		p.delta.record(normalizeRelayURL(te.entry.URL), te.entry)
+		p.delta.record(canonicalizeRelayURL(te.entry.URL), te.entry)
 	}
 	if fullRefresh {
 		p.delta.markFullRefresh()
@@ -238,7 +238,7 @@ func (p *NIP66Publisher) createAnnouncementEvent() *nostr.Event {
 
 // createRelayStatusEvent creates a kind 30166 relay status event.
 func (p *NIP66Publisher) createRelayStatusEvent(entry *cache.RelayEntry) *nostr.Event {
-	normURL := normalizeRelayURL(entry.URL)
+	normURL := canonicalizeRelayURL(entry.URL)
 	tags := nostr.Tags{
 		{"d", normURL},
 	}
