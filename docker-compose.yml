@@ -18,6 +18,7 @@ services:
       # Publishing configuration
       - PUBLISH_ENABLED=true
       - PUBLISH_RELAYS=ws://relay:8080,wss://relay.cloistr.xyz
+      - PREFS_RELAY_URL=ws://relay:8080
       - PUBLISH_INTERVAL=5
       # Test private key (generate fresh for production!)
       - NOSTR_PRIVATE_KEY=${NOSTR_PRIVATE_KEY:-}
