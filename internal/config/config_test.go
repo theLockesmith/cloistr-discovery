@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,7 @@ func TestLoad_Defaults(t *testing.T) {
 	for _, v := range envVars {
 		os.Unsetenv(v)
 	}
+	t.Setenv("PREFS_RELAY_URL", "wss://relay.example")
 
 	cfg, err := Load()
 	if err != nil {
@@ -48,6 +50,8 @@ func TestLoad_FromEnv(t *testing.T) {
 	os.Setenv("CACHE_URL", "redis://custom:6380")
 	os.Setenv("SEED_RELAYS", "wss://relay1.example,wss://relay2.example")
 	os.Setenv("PUBLISH_ENABLED", "true")
+	t.Setenv("PREFS_RELAY_URL", "wss://prefs.example")
+	t.Setenv("PUBLISH_RELAYS", "wss://pub1.example,wss://pub2.example")
 	defer func() {
 		os.Unsetenv("DISCOVERY_PORT")
 		os.Unsetenv("LOG_LEVEL")
@@ -156,5 +160,48 @@ func TestGetEnvSlice_SingleValue(t *testing.T) {
 	}
 	if result[0] != "single" {
 		t.Errorf("result[0] = %s, want single", result[0])
+	}
+}
+
+func TestLoad_RequiresPrefsRelayURL(t *testing.T) {
+	t.Setenv("PREFS_RELAY_URL", "")
+	t.Setenv("PUBLISH_ENABLED", "false")
+	t.Setenv("NIP66_PUBLISH_ENABLED", "false")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "PREFS_RELAY_URL") {
+		t.Fatalf("Load() error = %v, want one naming PREFS_RELAY_URL", err)
+	}
+}
+
+func TestLoad_RequiresPublishRelaysWhenPublishing(t *testing.T) {
+	for _, flag := range []string{"PUBLISH_ENABLED", "NIP66_PUBLISH_ENABLED"} {
+		t.Run(flag, func(t *testing.T) {
+			t.Setenv("PREFS_RELAY_URL", "wss://prefs.example")
+			t.Setenv("PUBLISH_RELAYS", "")
+			t.Setenv("PUBLISH_ENABLED", "false")
+			t.Setenv("NIP66_PUBLISH_ENABLED", "false")
+			t.Setenv(flag, "true")
+
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "PUBLISH_RELAYS") {
+				t.Fatalf("Load() error = %v, want one naming PUBLISH_RELAYS", err)
+			}
+		})
+	}
+}
+
+func TestLoad_PublishRelaysOptionalWhenNotPublishing(t *testing.T) {
+	t.Setenv("PREFS_RELAY_URL", "wss://prefs.example")
+	t.Setenv("PUBLISH_RELAYS", "")
+	t.Setenv("PUBLISH_ENABLED", "false")
+	t.Setenv("NIP66_PUBLISH_ENABLED", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if len(cfg.PublishRelays) != 0 {
+		t.Errorf("PublishRelays = %v, want empty", cfg.PublishRelays)
 	}
 }

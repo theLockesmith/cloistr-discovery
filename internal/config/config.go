@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -82,7 +83,7 @@ func Load() (*Config, error) {
 		SeedRelays:         getEnvSlice("SEED_RELAYS", []string{"wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"}),
 		RelayCheckInterval: getEnvInt("RELAY_CHECK_INTERVAL", 300),
 		NIP11Timeout:       getEnvInt("NIP11_TIMEOUT", 10),
-		PrefsRelayURL:      getEnv("PREFS_RELAY_URL", "wss://relay.cloistr.xyz"),
+		PrefsRelayURL:      getEnv("PREFS_RELAY_URL", ""), // required, see validate
 
 		// Inventory/Activity settings
 		InventoryTTL: getEnvInt("INVENTORY_TTL", 12),
@@ -90,7 +91,7 @@ func Load() (*Config, error) {
 
 		// Publishing settings
 		PublishEnabled:         getEnvBool("PUBLISH_ENABLED", false),
-		PublishRelays:          getEnvSlice("PUBLISH_RELAYS", []string{"wss://relay.cloistr.xyz"}),
+		PublishRelays:          getEnvSlice("PUBLISH_RELAYS", nil), // required when publishing, see validate
 		PublishInterval:        getEnvInt("PUBLISH_INTERVAL", 10),
 		PublishRefreshInterval: getEnvInt("PUBLISH_REFRESH_INTERVAL", 60),
 		PrivateKey:             getEnv("NOSTR_PRIVATE_KEY", ""),
@@ -124,7 +125,23 @@ func Load() (*Config, error) {
 		ChecksPerSecond:    getEnvInt("CHECKS_PER_SECOND", 3),
 	}
 
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+// validate rejects missing relay settings. They have no defaults on purpose:
+// a default would be the production relay, so a staging or local deployment
+// that forgot the variable would silently read from or publish to production.
+func (c *Config) validate() error {
+	if c.PrefsRelayURL == "" {
+		return fmt.Errorf("PREFS_RELAY_URL is not set: it names the relay used to fetch user relay preferences and has no default")
+	}
+	if (c.PublishEnabled || c.NIP66PublishEnabled) && len(c.PublishRelays) == 0 {
+		return fmt.Errorf("PUBLISH_RELAYS is not set: it is required when PUBLISH_ENABLED or NIP66_PUBLISH_ENABLED is true and has no default")
+	}
+	return nil
 }
 
 func getEnv(key, defaultValue string) string {
