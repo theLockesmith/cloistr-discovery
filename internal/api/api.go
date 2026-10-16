@@ -59,6 +59,7 @@ const (
 //   - moderation: filter by minimum moderation level (unmoderated, light, active, strict)
 //   - language: filter by language (ISO 639-1 code)
 //   - community: filter by community name
+//   - search: case-insensitive substring of URL, name or description
 //   - limit: maximum number of results (default 100, max 1000)
 //   - offset: number of results to skip for pagination
 func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
@@ -250,6 +251,10 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get relay entries using batch retrieval
 	healthFilter := q.Get("health")
+	search := strings.ToLower(strings.TrimSpace(q.Get("search")))
+	if len(search) > maxSearchLen {
+		search = search[:maxSearchLen]
+	}
 
 	entries, err := s.cache.GetRelayEntriesBatch(ctx, relayURLs)
 	if err != nil {
@@ -265,6 +270,9 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if healthFilter != "" && entry.Health != healthFilter {
+			continue
+		}
+		if search != "" && !matchesSearch(entry, search) {
 			continue
 		}
 		relays = append(relays, *entry)
@@ -293,6 +301,17 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+
+// maxSearchLen bounds the search term; longer input is truncated.
+const maxSearchLen = 200
+
+// matchesSearch reports whether a relay's URL, name or description contains
+// term, which must already be lower-cased.
+func matchesSearch(e *cache.RelayEntry, term string) bool {
+	return strings.Contains(strings.ToLower(e.URL), term) ||
+		strings.Contains(strings.ToLower(e.Name), term) ||
+		strings.Contains(strings.ToLower(e.Description), term)
+}
 
 // intersect returns the intersection of two string slices.
 func intersect(a, b []string) []string {
