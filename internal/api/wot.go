@@ -14,6 +14,12 @@ import (
 )
 
 const (
+	// wotBudget bounds all WoT work for one recommendation request: the
+	// contact list fetch plus the follows' relay lists. Past it, the request
+	// answers with whatever arrived (2026-10-16: unbounded, it took ~25s and
+	// the edge answered 502 for users with large follow lists).
+	wotBudget = 8 * time.Second
+
 	// wotFetchTimeout is the timeout for fetching WoT data.
 	wotFetchTimeout = 15 * time.Second
 
@@ -28,6 +34,7 @@ const (
 type WoTScores struct {
 	RelayScores  map[string]int // relay URL -> number of follows using it
 	FollowsCount int            // Total follows analyzed
+	Partial      bool           // wotBudget ran out before all follow data arrived
 }
 
 // GetWoTRelayScores computes relay scores based on user's follows' relay lists.
@@ -45,10 +52,16 @@ func (s *Server) GetWoTRelayScores(ctx context.Context, pubkey string) (*WoTScor
 		}, nil
 	}
 
-	// Cache miss - compute WoT scores
-	scores, err := s.computeWoTScores(ctx, pubkey)
+	// Cache miss - compute WoT scores, all of it inside one time budget.
+	budgetCtx, cancel := context.WithTimeout(ctx, wotBudget)
+	defer cancel()
+	scores, err := s.computeWoTScores(budgetCtx, pubkey)
 	if err != nil {
 		return nil, err
+	}
+	if scores.Partial {
+		// Not cached: a later request may get the full picture.
+		return scores, nil
 	}
 
 	// Cache the result
@@ -71,6 +84,9 @@ func (s *Server) computeWoTScores(ctx context.Context, pubkey string) (*WoTScore
 	follows, err := s.getFollows(ctx, pubkey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get follows: %w", err)
+	}
+	if ctx.Err() != nil {
+		return &WoTScores{RelayScores: map[string]int{}, Partial: true}, nil
 	}
 
 	if len(follows) == 0 {
@@ -95,6 +111,9 @@ func (s *Server) computeWoTScores(ctx context.Context, pubkey string) (*WoTScore
 
 	fetchCtx, cancel := context.WithTimeout(ctx, wotFetchTimeout)
 	defer cancel()
+	// Follows whose relay list was counted; anything short of all of them
+	// means the budget ran out.
+	fetched := 0
 
 	for _, followPubkey := range follows {
 		wg.Add(1)
@@ -118,6 +137,7 @@ func (s *Server) computeWoTScores(ctx context.Context, pubkey string) (*WoTScore
 
 			// Count relay usage
 			mu.Lock()
+			fetched++
 			for _, relayURL := range relays {
 				relayScores[relayURL]++
 			}
@@ -130,6 +150,7 @@ func (s *Server) computeWoTScores(ctx context.Context, pubkey string) (*WoTScore
 	return &WoTScores{
 		RelayScores:  relayScores,
 		FollowsCount: len(follows),
+		Partial:      fetchCtx.Err() != nil && fetched < len(follows),
 	}, nil
 }
 
@@ -148,6 +169,10 @@ func (s *Server) getFollows(ctx context.Context, pubkey string) ([]string, error
 	follows, err := s.fetchContactList(ctx, pubkey)
 	if err != nil {
 		return nil, err
+	}
+	if ctx.Err() != nil {
+		// Cut short, so "no follows" is not known: do not cache it.
+		return follows, nil
 	}
 
 	// Cache the result

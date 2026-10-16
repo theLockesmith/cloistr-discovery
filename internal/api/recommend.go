@@ -37,6 +37,7 @@ type RecommendationInputs struct {
 	ExcludeAuth    bool   `json:"exclude_auth,omitempty"`
 	ExcludePayment bool   `json:"exclude_payment,omitempty"`
 	WoTEnabled     bool   `json:"wot_enabled,omitempty"` // Whether WoT scoring was applied
+	WoTPartial     bool   `json:"wot_partial,omitempty"` // WoT data was cut short by its time budget
 }
 
 const (
@@ -112,7 +113,11 @@ func (s *Server) RecommendRelaysHandler(w http.ResponseWriter, r *http.Request) 
 			scores, err := s.GetWoTRelayScores(ctx, pubkey)
 			if err != nil {
 				slog.Warn("failed to get WoT scores, continuing without", "pubkey", pubkey, "error", err)
-			} else if scores != nil && len(scores.RelayScores) > 0 {
+			}
+			if scores != nil {
+				criteria.WoTPartial = scores.Partial
+			}
+			if err == nil && scores != nil && len(scores.RelayScores) > 0 {
 				wotScores = scores
 				criteria.WoTEnabled = true
 			}
