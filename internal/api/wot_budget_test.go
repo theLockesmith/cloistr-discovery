@@ -7,8 +7,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"git.aegis-hq.xyz/coldforge/cloistr-discovery/internal/cache"
 )
@@ -98,5 +101,62 @@ func TestRecommend_ContactFetchIsBounded(t *testing.T) {
 	server.RecommendRelaysHandler(w, httptest.NewRequest(http.MethodGet, "/api/v1/relays/recommend?pubkey=32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245", nil))
 	if elapsed := time.Since(start); elapsed > wotBudget+2*time.Second || w.Code != http.StatusOK {
 		t.Fatalf("status %d after %v; want 200 within the %v budget", w.Code, elapsed, wotBudget)
+	}
+	// cloistr-pr on !26: a cut-off contact fetch must say so, or a client
+	// cannot tell "no WoT because of the timeout" from "no WoT at all".
+	var resp RecommendationResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Criteria.WoTPartial {
+		t.Error("criteria.wot_partial must be set when the contact list fetch was cut off by the budget")
+	}
+}
+
+// mutedRelay completes the WebSocket handshake, then never sends anything:
+// a relay that is up but does not answer REQs.
+func mutedRelay(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http")
+}
+
+// A contact fetch where no relay answered (each gave up after its own wait,
+// inside the budget) is not "this user follows nobody": it must set
+// wot_partial and must not be cached as an empty contact list.
+func TestRecommend_ContactFetchNoAnswerIsPartial(t *testing.T) {
+	server, mr := setupTestServer(t)
+	defer mr.Close()
+	server.cfg.SeedRelays = []string{mutedRelay(t), mutedRelay(t)}
+	ctx := context.Background()
+	server.cache.SetRelayEntry(ctx, &cache.RelayEntry{URL: "wss://a.example", Health: "online", LastChecked: time.Now()}, time.Hour)
+	const user = "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245"
+
+	w := httptest.NewRecorder()
+	server.RecommendRelaysHandler(w, httptest.NewRequest(http.MethodGet, "/api/v1/relays/recommend?pubkey="+user, nil))
+	var resp RecommendationResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || len(resp.Recommendations) != 1 {
+		t.Fatalf("status %d, %d recommendations; want 200 with the relay recommended without WoT", w.Code, len(resp.Recommendations))
+	}
+	if !resp.Criteria.WoTPartial {
+		t.Error("criteria.wot_partial must be set when no relay answered the contact list request")
+	}
+	if cached, _ := server.cache.GetUserContacts(ctx, user); cached != nil {
+		t.Errorf("an unanswered contact fetch was cached as %d follows", len(cached.Follows))
 	}
 }
