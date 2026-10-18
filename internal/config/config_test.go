@@ -205,3 +205,26 @@ func TestLoad_PublishRelaysOptionalWhenNotPublishing(t *testing.T) {
 		t.Errorf("PublishRelays = %v, want empty", cfg.PublishRelays)
 	}
 }
+
+// relay.nostr.band is dead (2026-10-18: 3 of 3 connects timed out after 8s).
+// A dead default seed relay slows every crawler pass, and under discovery !28
+// it would keep every user without a contact list from being cached.
+func TestDefaultSeedRelaysHaveNoDeadRelay(t *testing.T) {
+	t.Setenv("SEED_RELAYS", "")
+	os.Unsetenv("SEED_RELAYS") // t.Setenv restores it afterwards
+	t.Setenv("PREFS_RELAY_URL", "wss://relay.example")
+	t.Setenv("PUBLISH_ENABLED", "false")
+	t.Setenv("NIP66_PUBLISH_ENABLED", "false")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SeedRelays) == 0 {
+		t.Fatal("expected default seed relays")
+	}
+	for _, r := range cfg.SeedRelays {
+		if r == "wss://relay.nostr.band" {
+			t.Fatalf("default SEED_RELAYS still lists the dead %s: %v", r, cfg.SeedRelays)
+		}
+	}
+}

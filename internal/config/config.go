@@ -80,7 +80,7 @@ func Load() (*Config, error) {
 		CacheURL: getEnv("CACHE_URL", "redis://localhost:6379"),
 
 		// Relay monitoring settings
-		SeedRelays:         getEnvSlice("SEED_RELAYS", []string{"wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"}),
+		SeedRelays:         getEnvSlice("SEED_RELAYS", []string{"wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"}),
 		RelayCheckInterval: getEnvInt("RELAY_CHECK_INTERVAL", 300),
 		NIP11Timeout:       getEnvInt("NIP11_TIMEOUT", 10),
 		PrefsRelayURL:      getEnv("PREFS_RELAY_URL", ""), // required, see validate
