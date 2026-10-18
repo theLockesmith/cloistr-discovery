@@ -160,3 +160,77 @@ func TestRecommend_ContactFetchNoAnswerIsPartial(t *testing.T) {
 		t.Errorf("an unanswered contact fetch was cached as %d follows", len(cached.Follows))
 	}
 }
+
+// eoseOnlyRelay answers every REQ with EOSE and no events: a relay that is
+// up but does not hold this user's contact list.
+func eoseOnlyRelay(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			_, msg, err := c.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var req []json.RawMessage
+			if json.Unmarshal(msg, &req) == nil && len(req) >= 2 && string(req[0]) == `"REQ"` {
+				c.Write(r.Context(), websocket.MessageText, []byte(`["EOSE",`+string(req[1])+`]`))
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http")
+}
+
+// cloistr-pr on !27: one relay answers EOSE with no kind 3 while the relay
+// that has it stays silent. "Follows nobody" is only known when EVERY
+// queried relay answered; otherwise WoT is partial and nothing is cached.
+func TestRecommend_EmptyContactsNeedEveryRelay(t *testing.T) {
+	server, mr := setupTestServer(t)
+	defer mr.Close()
+	server.cfg.SeedRelays = []string{eoseOnlyRelay(t), mutedRelay(t)}
+	ctx := context.Background()
+	server.cache.SetRelayEntry(ctx, &cache.RelayEntry{URL: "wss://a.example", Health: "online", LastChecked: time.Now()}, time.Hour)
+	const user = "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245"
+
+	w := httptest.NewRecorder()
+	server.RecommendRelaysHandler(w, httptest.NewRequest(http.MethodGet, "/api/v1/relays/recommend?pubkey="+user, nil))
+	var resp RecommendationResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Criteria.WoTPartial {
+		t.Error("criteria.wot_partial must be set when a queried relay stayed silent and no contact list was found")
+	}
+	if cached, _ := server.cache.GetUserContacts(ctx, user); cached != nil {
+		t.Errorf("cached as %d follows although a relay never answered", len(cached.Follows))
+	}
+}
+
+// When every relay answers and none has a contact list, "follows nobody" is
+// final: not partial, and cached.
+func TestRecommend_EmptyContactsFromEveryRelayIsFinal(t *testing.T) {
+	server, mr := setupTestServer(t)
+	defer mr.Close()
+	server.cfg.SeedRelays = []string{eoseOnlyRelay(t), eoseOnlyRelay(t)}
+	ctx := context.Background()
+	server.cache.SetRelayEntry(ctx, &cache.RelayEntry{URL: "wss://a.example", Health: "online", LastChecked: time.Now()}, time.Hour)
+	const user = "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245"
+
+	w := httptest.NewRecorder()
+	server.RecommendRelaysHandler(w, httptest.NewRequest(http.MethodGet, "/api/v1/relays/recommend?pubkey="+user, nil))
+	var resp RecommendationResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Criteria.WoTPartial {
+		t.Error("every relay answered: no follows is final, not partial")
+	}
+	if cached, _ := server.cache.GetUserContacts(ctx, user); cached == nil {
+		t.Error("a final empty contact list should be cached")
+	}
+}
