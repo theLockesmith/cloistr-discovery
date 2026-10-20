@@ -274,8 +274,10 @@ func fetchContactsFromRelay(ctx context.Context, relayURL, pubkey string) (*nost
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case event, ok := <-sub.Events:
+		// Events closes when ctx ends or the connection drops, and select may
+		// pick that over ctx.Done: a closed stream is not an answer.
 		if !ok || event == nil {
-			return nil, nil
+			return nil, errors.New("subscription closed before an answer")
 		}
 		return event, nil
 	case <-sub.EndOfStoredEvents:
