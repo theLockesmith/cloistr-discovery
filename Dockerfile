@@ -6,6 +6,9 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
 
+# go-nostr is replaced by our fork on git.aegis-hq.xyz (see go.mod)
+ENV GOPRIVATE=git.aegis-hq.xyz
+
 # Copy go mod files first for caching
 COPY go.mod go.sum ./
 RUN go mod download
