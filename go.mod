@@ -53,3 +53,11 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+// go-nostr v0.52.3 data race: Relay.close() reads r.Connection while the
+// relay's writer goroutine sets it to nil once the connection context is
+// done (unsynchronized; can nil-panic inside Close). Not fixed upstream as of
+// v0.52.3. Our fork drops the nil assignment; see
+// git.aegis-hq.xyz/coldforge/go-nostr branch cloistr/v0.52.3 and
+// TestFetchContactsFromRelay_CloseIsRaceFree. Drop this once upstream fixes it.
+replace github.com/nbd-wtf/go-nostr => git.aegis-hq.xyz/coldforge/go-nostr v0.52.3-cloistr.1

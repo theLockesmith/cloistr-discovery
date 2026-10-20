@@ -3,9 +3,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -29,6 +31,10 @@ const (
 	// wotMaxConcurrentFetches limits parallel relay connections.
 	wotMaxConcurrentFetches = 10
 )
+
+// errContactsUnanswered means no relay answered the contact list request, so
+// whether the user follows anyone is unknown (not "follows nobody").
+var errContactsUnanswered = errors.New("no relay answered the contact list request")
 
 // WoTScores contains the computed Web of Trust relay scores for a user.
 type WoTScores struct {
@@ -82,6 +88,9 @@ func (s *Server) GetWoTRelayScores(ctx context.Context, pubkey string) (*WoTScor
 func (s *Server) computeWoTScores(ctx context.Context, pubkey string) (*WoTScores, error) {
 	// Step 1: Get user's follows (NIP-02 contact list)
 	follows, err := s.getFollows(ctx, pubkey)
+	if errors.Is(err, errContactsUnanswered) {
+		return &WoTScores{RelayScores: map[string]int{}, Partial: true}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get follows: %w", err)
 	}
@@ -200,6 +209,7 @@ func (s *Server) fetchContactList(ctx context.Context, pubkey string) ([]string,
 
 	var wg sync.WaitGroup
 	results := make(chan *nostr.Event, len(relaysToQuery))
+	var answered atomic.Int32
 
 	for _, relayURL := range relaysToQuery {
 		wg.Add(1)
@@ -210,6 +220,7 @@ func (s *Server) fetchContactList(ctx context.Context, pubkey string) ([]string,
 				slog.Debug("failed to fetch contacts from relay", "relay", url, "pubkey", pubkey, "error", err)
 				return
 			}
+			answered.Add(1)
 			if event != nil {
 				results <- event
 			}
@@ -230,7 +241,10 @@ func (s *Server) fetchContactList(ctx context.Context, pubkey string) ([]string,
 	}
 
 	if newestEvent == nil {
-		return nil, nil // No contacts found is not an error
+		if answered.Load() == 0 && len(relaysToQuery) > 0 {
+			return nil, errContactsUnanswered
+		}
+		return nil, nil // A relay answered and has no contact list: not an error
 	}
 
 	return parseContactTags(newestEvent.Tags), nil
@@ -260,12 +274,16 @@ func fetchContactsFromRelay(ctx context.Context, relayURL, pubkey string) (*nost
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case event, ok := <-sub.Events:
+		// Events closes when ctx ends or the connection drops, and select may
+		// pick that over ctx.Done: a closed stream is not an answer.
 		if !ok || event == nil {
-			return nil, nil
+			return nil, errors.New("subscription closed before an answer")
 		}
 		return event, nil
+	case <-sub.EndOfStoredEvents:
+		return nil, nil // answered: no contact list here
 	case <-time.After(5 * time.Second):
-		return nil, nil
+		return nil, errors.New("no answer in 5s") // silence is not "no contacts"
 	}
 }
 
