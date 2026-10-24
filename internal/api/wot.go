@@ -273,6 +273,14 @@ func fetchContactsFromRelay(ctx context.Context, relayURL, pubkey string) (*nost
 	}
 	defer sub.Unsub()
 
+	return awaitStoredEvent(ctx, sub)
+}
+
+// awaitStoredEvent waits for a relay's answer to a Limit:1 REQ. It returns
+// the event if one arrives, nil with no error when the relay answered EOSE
+// without one, and an error when the relay did not answer: silence and a
+// dropped connection are not "the user has none".
+func awaitStoredEvent(ctx context.Context, sub *nostr.Subscription) (*nostr.Event, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -284,9 +292,9 @@ func fetchContactsFromRelay(ctx context.Context, relayURL, pubkey string) (*nost
 		}
 		return event, nil
 	case <-sub.EndOfStoredEvents:
-		return nil, nil // answered: no contact list here
+		return nil, nil // answered: none here
 	case <-time.After(5 * time.Second):
-		return nil, errors.New("no answer in 5s") // silence is not "no contacts"
+		return nil, errors.New("no answer in 5s")
 	}
 }
 
