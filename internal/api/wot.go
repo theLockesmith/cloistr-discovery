@@ -32,9 +32,10 @@ const (
 	wotMaxConcurrentFetches = 10
 )
 
-// errContactsUnanswered means no relay answered the contact list request, so
-// whether the user follows anyone is unknown (not "follows nobody").
-var errContactsUnanswered = errors.New("no relay answered the contact list request")
+// errContactsUnanswered means no contact list was found and at least one
+// queried relay did not answer, so whether the user follows anyone is
+// unknown (not "follows nobody").
+var errContactsUnanswered = errors.New("contact list not found and a relay did not answer")
 
 // WoTScores contains the computed Web of Trust relay scores for a user.
 type WoTScores struct {
@@ -241,10 +242,12 @@ func (s *Server) fetchContactList(ctx context.Context, pubkey string) ([]string,
 	}
 
 	if newestEvent == nil {
-		if answered.Load() == 0 && len(relaysToQuery) > 0 {
+		// "Follows nobody" is only known when every queried relay answered:
+		// a silent relay may be the one that holds the contact list.
+		if int(answered.Load()) < len(relaysToQuery) {
 			return nil, errContactsUnanswered
 		}
-		return nil, nil // A relay answered and has no contact list: not an error
+		return nil, nil // every relay answered and none has a contact list
 	}
 
 	return parseContactTags(newestEvent.Tags), nil
