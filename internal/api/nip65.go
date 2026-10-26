@@ -232,18 +232,7 @@ func fetchNIP65FromRelay(ctx context.Context, relayURL, pubkey string) (*nostr.E
 	}
 	defer sub.Unsub()
 
-	// Wait for event with timeout
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case event, ok := <-sub.Events:
-		if !ok || event == nil {
-			return nil, nil
-		}
-		return event, nil
-	case <-time.After(5 * time.Second):
-		return nil, nil
-	}
+	return awaitStoredEvent(ctx, sub)
 }
 
 // parseNIP65Tags extracts relay URLs and read/write markers from NIP-65 event tags.

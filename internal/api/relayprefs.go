@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -98,10 +99,14 @@ func (s *Server) RelayPrefsHandler(w http.ResponseWriter, r *http.Request) {
 	// Cache miss - fetch from relay
 	relays, source, fetchErr := s.fetchRelayPrefs(ctx, pubkey)
 	if fetchErr != nil {
+		// The relay did not answer, so whether the user has preferences is
+		// unknown. Answering (and caching) "default" would tell every client
+		// the user has none; an error sends them to their own fallback.
 		slog.Error("failed to fetch relay prefs", "pubkey", pubkey, "error", fetchErr)
-		// On error, still return default
-		relays = []RelayPrefsEntry{}
-		source = "default"
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "relay preferences unavailable"})
+		return
 	}
 
 	// Ensure relays is never nil (JSON serializes nil as null, but clients expect [])
@@ -142,7 +147,8 @@ func (s *Server) RelayPrefsHandler(w http.ResponseWriter, r *http.Request) {
 
 // fetchRelayPrefs fetches relay preferences for a pubkey.
 // Tries kind:30078 d=cloistr-relays first, then kind:10002 (NIP-65).
-// Returns empty list with source="default" if nothing found.
+// Returns empty list with source="default" if the relay answered with nothing,
+// and an error if it did not answer.
 func (s *Server) fetchRelayPrefs(ctx context.Context, pubkey string) ([]RelayPrefsEntry, string, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, relayPrefsFetchTimeout)
 	defer cancel()
@@ -155,10 +161,11 @@ func (s *Server) fetchRelayPrefs(ctx context.Context, pubkey string) ([]RelayPre
 	}
 	defer relay.Close()
 
-	// First try kind:30078 d=cloistr-relays
+	// First try kind:30078 d=cloistr-relays. If the relay did not answer,
+	// falling back to NIP-65 could serve (and cache) the wrong list.
 	cloistrEvent, err := s.fetchCloistrRelays(fetchCtx, relay, pubkey)
 	if err != nil {
-		slog.Debug("failed to fetch cloistr-relays event", "pubkey", pubkey, "error", err)
+		return nil, "default", fmt.Errorf("cloistr-relays: %w", err)
 	}
 	if cloistrEvent != nil {
 		relays := parseRelayTags(cloistrEvent.Tags)
@@ -170,7 +177,7 @@ func (s *Server) fetchRelayPrefs(ctx context.Context, pubkey string) ([]RelayPre
 	// Fall back to kind:10002 (NIP-65)
 	nip65Event, err := s.fetchNIP65Event(fetchCtx, relay, pubkey)
 	if err != nil {
-		slog.Debug("failed to fetch NIP-65 event", "pubkey", pubkey, "error", err)
+		return nil, "default", fmt.Errorf("nip65: %w", err)
 	}
 	if nip65Event != nil {
 		relays := parseRelayTags(nip65Event.Tags)
@@ -199,17 +206,7 @@ func (s *Server) fetchCloistrRelays(ctx context.Context, relay *nostr.Relay, pub
 	}
 	defer sub.Unsub()
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case event, ok := <-sub.Events:
-		if !ok || event == nil {
-			return nil, nil
-		}
-		return event, nil
-	case <-time.After(5 * time.Second):
-		return nil, nil
-	}
+	return awaitStoredEvent(ctx, sub)
 }
 
 // fetchNIP65Event fetches kind:10002 (NIP-65) event for a pubkey.
@@ -226,17 +223,7 @@ func (s *Server) fetchNIP65Event(ctx context.Context, relay *nostr.Relay, pubkey
 	}
 	defer sub.Unsub()
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case event, ok := <-sub.Events:
-		if !ok || event == nil {
-			return nil, nil
-		}
-		return event, nil
-	case <-time.After(5 * time.Second):
-		return nil, nil
-	}
+	return awaitStoredEvent(ctx, sub)
 }
 
 // parseRelayTags extracts relay URLs and read/write markers from event tags.

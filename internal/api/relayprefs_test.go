@@ -183,7 +183,7 @@ func TestRelayPrefsHandler_DefaultResponse(t *testing.T) {
 		Port:          8080,
 		LogLevel:      "info",
 		CacheURL:      "redis://" + mr.Addr(),
-		PrefsRelayURL: unreachableRelayURL(t),
+		PrefsRelayURL: eoseOnlyRelay(t),
 	}
 
 	server := New(cfg, cacheClient)
@@ -193,7 +193,7 @@ func TestRelayPrefsHandler_DefaultResponse(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay-prefs/"+pubkey, nil)
 	w := httptest.NewRecorder()
 
-	// This will fail to connect to relay.cloistr.xyz in tests but should return default
+	// The relay answers with no events: the user has no preferences.
 	server.RelayPrefsHandler(w, req)
 
 	resp := w.Result()
@@ -264,7 +264,7 @@ func TestRelayPrefsHandler_EmptyRelaysIsArrayNotNull(t *testing.T) {
 		Port:          8080,
 		LogLevel:      "info",
 		CacheURL:      "redis://" + mr.Addr(),
-		PrefsRelayURL: unreachableRelayURL(t),
+		PrefsRelayURL: eoseOnlyRelay(t),
 	}
 
 	server := New(cfg, cacheClient)
