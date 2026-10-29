@@ -60,6 +60,7 @@ const (
 //   - language: filter by language (ISO 639-1 code)
 //   - community: filter by community name
 //   - search: case-insensitive substring of URL, name or description
+//   - payment: free or paid (by NIP-11 payment_required); any other value is a 400
 //   - limit: maximum number of results (default 100, max 1000)
 //   - offset: number of results to skip for pagination
 func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +250,15 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// NIP-11 only says whether payment is required, so free and paid are the
+	// only answers this filter can give; anything else is refused rather than
+	// silently ignored.
+	payment := strings.ToLower(strings.TrimSpace(q.Get("payment")))
+	if payment != "" && payment != "free" && payment != "paid" {
+		http.Error(w, `payment must be "free" or "paid"`, http.StatusBadRequest)
+		return
+	}
+
 	// Get relay entries using batch retrieval
 	healthFilter := q.Get("health")
 	search := strings.ToLower(strings.TrimSpace(q.Get("search")))
@@ -273,6 +283,9 @@ func (s *Server) RelaysHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if search != "" && !matchesSearch(entry, search) {
+			continue
+		}
+		if payment != "" && entry.PaymentRequired != (payment == "paid") {
 			continue
 		}
 		relays = append(relays, *entry)
